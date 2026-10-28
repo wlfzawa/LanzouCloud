@@ -344,11 +344,12 @@ public class LanzouClient {
         public final String baseUrl;
         public final String fid;
         public final String uid;
-        public final String puid;
-        public final String t;
-        public final String k;
         public final String name;
         public final String pwd;
+        /** 以下三项每次打开页面都会变，过期后需要刷新 */
+        public String puid;
+        public String t;
+        public String k;
 
         FolderRef(String pageUrl, String baseUrl, String fid, String uid, String puid,
                   String t, String k, String name, String pwd) {
@@ -447,8 +448,8 @@ public class LanzouClient {
 
         String api = ref.baseUrl + "/filemoreajax.php?file=" + ref.fid;
         JsonObject d = null;
-        // 服务端对翻页有频率限制，过快会回 zt=4「请刷新，重试」或直接返回空响应，
-        // 这里退避 1.5 秒重试一次（连续快速翻页时最容易触发）
+        // 服务端对翻页有频率限制，过快会回 zt=4「请刷新，重试」或直接返回空响应。
+        // 第二次尝试前重新打开一次页面，刷新 puid/t/k（打开久了这些值会过期）。
         for (int attempt = 0; attempt < 2; attempt++) {
             try {
                 d = postFormJson(api, data, ref.pageUrl);
@@ -459,8 +460,18 @@ public class LanzouClient {
             d = null;
             if (attempt == 0) {
                 try {
-                    Thread.sleep(1500);
+                    Thread.sleep(1200);
                 } catch (InterruptedException ignored) {
+                }
+                try {
+                    FolderRef fresh = openFolder(ref.pageUrl, ref.pwd);
+                    ref.puid = fresh.puid;
+                    ref.t = fresh.t;
+                    ref.k = fresh.k;
+                    data.put("puid", ref.puid);
+                    data.put("t", ref.t);
+                    data.put("k", ref.k);
+                } catch (LanzouException ignored) {
                 }
             }
         }
