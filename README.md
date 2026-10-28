@@ -21,10 +21,13 @@
 
 | 渠道 | 地址 |
 |---|---|
-| GitHub Releases | 见本仓库 Releases 页 |
-| 蓝奏云 | 每个版本的 Release 说明里附链接与提取码 |
+| GitHub Releases | https://github.com/wlfzawa/LanzouCloud/releases |
+| Gitee Releases | https://gitee.com/wlfzawa/LanzouCloud/releases |
+| 蓝奏云 | https://wwbkc.lanzn.com/ighfC4dsb64h 提取码 `ejp3` |
 
 同一版本用同一证书签名，可直接覆盖安装。
+
+当前版本：`1.2.0-beta.1793201773`（2.9 MB）
 
 ## 兼容性
 

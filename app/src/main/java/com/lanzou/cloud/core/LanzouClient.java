@@ -446,9 +446,31 @@ public class LanzouClient {
         data.put("pwd", ref.pwd);
 
         String api = ref.baseUrl + "/filemoreajax.php?file=" + ref.fid;
-        JsonObject d = postFormJson(api, data, ref.pageUrl);
+        JsonObject d = null;
+        // 服务端对翻页有频率限制，过快会回 zt=4「请刷新，重试」或直接返回空响应，
+        // 这里退避 1.5 秒重试一次（连续快速翻页时最容易触发）
+        for (int attempt = 0; attempt < 2; attempt++) {
+            try {
+                d = postFormJson(api, data, ref.pageUrl);
+            } catch (LanzouException e) {
+                d = null;
+            }
+            if (d != null && !"4".equals(getStr(d, "zt"))) break;
+            d = null;
+            if (attempt == 0) {
+                try {
+                    Thread.sleep(1500);
+                } catch (InterruptedException ignored) {
+                }
+            }
+        }
+        if (d == null) {
+            throw new LanzouException(LanzouException.FAILED,
+                    "请求过于频繁，请稍等几秒再点「加载更多」");
+        }
         String zt = getStr(d, "zt");
         String info = getStr(d, "info");
+
 
         if ("3".equals(zt)) {
             throw new LanzouException(LanzouException.PASSWORD_ERROR,
