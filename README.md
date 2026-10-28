@@ -23,11 +23,11 @@
 |---|---|
 | GitHub Releases | https://github.com/wlfzawa/LanzouCloud/releases |
 | Gitee Releases | https://gitee.com/wlfzawa/LanzouCloud/releases |
-| 蓝奏云 | https://wwbkc.lanzn.com/i8uh84dsctbi 提取码 `b3c4` |
+| 蓝奏云 | https://wwbkc.lanzn.com/itNN74dsdknc 提取码 `d6a7` |
 
 同一版本用同一证书签名，可直接覆盖安装。
 
-当前版本：`1.2.0-beta.1793203327`（2.9 MB）
+当前版本：`1.2.0-beta.1793203898`（2.9 MB）
 
 ## 兼容性
 

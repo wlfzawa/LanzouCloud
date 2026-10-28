@@ -365,18 +365,18 @@ public class LanzouClient {
         }
     }
 
-    /** 是否为文件夹分享链接（/bXXXXXX，带不带 /s/ 前缀都算） */
+    /** 是否为文件夹分享链接（/bXXXXXX，带不带 https:// 都算） */
     public static boolean isFolderShareUrl(String url) {
-        if (url == null || url.trim().isEmpty()) return false;
-        String path;
-        try {
-            path = Uri.parse(url.trim()).getPath();
-        } catch (Exception e) {
-            return false;
-        }
-        if (path == null) return false;
-        String p = path.replaceAll("^/+", "").replaceAll("/+$", "");
-        return Pattern.compile("(?:s/)?b[A-Za-z0-9]{6,}").matcher(p).matches();
+        if (url == null) return false;
+        String u = url.trim();
+        if (u.isEmpty()) return false;
+        int q = u.indexOf('?');
+        if (q > 0) u = u.substring(0, q);
+        int hash = u.indexOf('#');
+        if (hash > 0) u = u.substring(0, hash);
+        int slash = u.lastIndexOf('/');
+        String last = slash >= 0 ? u.substring(slash + 1) : u;
+        return Pattern.compile("b[A-Za-z0-9]{6,}").matcher(last).matches();
     }
 
     /**

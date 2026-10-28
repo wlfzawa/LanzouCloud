@@ -154,7 +154,7 @@ public class ShareBrowseActivity extends Activity {
         }
         infoText.setText(tip);
         moreBtn.setText(hasMore ? ("加载更多（第 " + (page + 1) + " 页）") : "没有更多了");
-        moreBtn.setVisibility(hasMore || items.isEmpty() ? View.VISIBLE : View.GONE);
+        moreBtn.setVisibility(hasMore ? View.VISIBLE : View.GONE);
         moreBtn.setEnabled(hasMore);
     }
 

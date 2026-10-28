@@ -165,7 +165,12 @@ def main():
 
     share = upload_lanzou(a.apk)
     if share:
-        notes += "\n\n## 下载\n\n| 渠道 | 地址 |\n|---|---|\n| 蓝奏云 | %s 提取码 `%s` |\n" % share
+        line = "| 蓝奏云 | %s 提取码 `%s` |" % share
+        if "| 蓝奏云 |" in notes:
+            # 说明里已写下载表：直接替换蓝奏云那一行，避免出现两份
+            notes = re.sub(r"\| 蓝奏云 \|.*", line, notes)
+        else:
+            notes += "\n\n## 下载\n\n| 渠道 | 地址 |\n|---|---|\n" + line + "\n"
 
     gh = os.environ.get("GH_TOKEN")
     gt = os.environ.get("GITEE_TOKEN")
