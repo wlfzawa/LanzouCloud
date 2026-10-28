@@ -1,0 +1,116 @@
+# LanzouCloud
+
+一个能在 **Android 2.3（API 9）** 上运行的蓝奏云第三方客户端。纯 Java 编写，不依赖 AndroidX，
+用 wolfSSL 补上老系统缺失的 TLS 1.2。
+
+> 仅用于学习与个人备份，请遵守蓝奏云服务条款，勿用于传播侵权内容。
+
+## 功能
+
+- **账号登录**：粘贴 Cookie 登录，或在高版本系统上用内置 WebView 登录并自动提取 Cookie
+- **多账号管理**：登录过的账号自动保存，可一键切换、重命名、删除
+- **文件管理**：浏览目录、进入子文件夹、上传文件、新建文件夹
+- **文件分享**：生成文件 / 文件夹分享链接与提取码
+- **分享链接下载**：支持 `https://xxx.lanzn.com/iXXXXXX` 单文件链接
+- **文件夹分享浏览**：支持 `https://xxx.lanzout.com/bXXXXXX` 文件夹链接，输入提取码后列出文件并逐个下载
+- **内建下载器**：后台队列、进度显示、失败重试、下载目录可改、重名自动改名
+- **Cookie 导出**：复制到剪贴板或导出 txt 分享
+- **深色无关的精简界面**：`Theme.Light.NoTitleBar`，兼容 API 9
+
+## 下载
+
+| 渠道 | 地址 |
+|---|---|
+| GitHub Releases | 见本仓库 Releases 页 |
+| 蓝奏云 | 每个版本的 Release 说明里附链接与提取码 |
+
+同一版本用同一证书签名，可直接覆盖安装。
+
+## 兼容性
+
+| 项目 | 值 |
+|---|---|
+| minSdk | **9（Android 2.3 Gingerbread）** |
+| targetSdk | 34 |
+| ABI | `armeabi-v7a`、`arm64-v8a` |
+| 签名 | v1（JAR）+ v2 |
+| 版本号 | `1.2.0-beta.<unix 时间戳>`，每构建一次自动递增 |
+
+TLS 按系统版本自动分层：
+
+| 系统版本 | 使用的 TLS |
+|---|---|
+| API 9 ~ 15 | **wolfSSL**（系统不支持 TLS 1.2） |
+| API 16 ~ 20 | 系统 TLS，强制 `TLSv1.2` |
+| API 21+ | 系统默认 |
+
+wolfSSL 加载失败时自动降级到系统 TLS，不会崩溃。
+
+## 为什么需要 wolfSSL
+
+Android 2.3 的系统 TLS 栈只到 SSL 3.0 / TLS 1.0，且不支持 SNI；蓝奏云的接口与 CDN
+（`pc.woozooo.com`、`slsstm2.dmpdmp.com`、`h1053.lanosso.com`）只接受 TLS 1.2，握手会直接失败。
+
+这里按老豆荚、BiliClassic 等项目的思路引入 **wolfSSL C 库**，自写极简 JNI 绑定，不复用
+wolfssljni 的 Java 层（它继承 `ExtendedSSLSession` 等 API 24+ 类型，在 API 9 上类加载即失败）。
+
+三个关键处理：
+
+1. **NDK r16b**：r17 起最低只支持 `android-16`，r21e 会引入 `__stack_chk_fail` 等 API 14+ 符号，
+   而 Android 2.3 的 libc 没有这些符号，`dlopen` 会失败。r16b 是最后一个支持 `android-9` 的 NDK。
+2. **关闭 BIND_NOW**：链接时追加 `-Wl,-z,lazy`，避免加载期解析全部符号。
+3. **补齐 C++ EH 符号**：clang 的 `-funwind-tables` 引入 `__cxa_call_unexpected` 等符号，
+   Android 2.3 的 libc 不导出 → 用 `cxa_stub.c` 提供空实现（wolfSSL 是纯 C，不会走到异常路径）。
+
+重新构建 native 库：`tools/build_wolfssl.sh [ABI] [android-API]`
+
+## 其他 API 9 兼容改造
+
+| 系统组件 | 问题 | 处理 |
+|---|---|---|
+| `Theme.Holo.*` | API 11+ | 改用 `Theme.Light.NoTitleBar` |
+| `android.widget.Switch` | API 14+ | 改用 `CheckBox` |
+| `VectorDrawable` | API 21+ | 改用各密度 PNG |
+| `androidx.core` FileProvider | 最低 API 14 | 自研 `MiniFileProvider` |
+| OkHttp 3.12 | `callTimeout` 引用 `java.time.Duration`（API 26） | 降到 3.11.0 |
+
+## 构建
+
+```bash
+export ANDROID_HOME=/opt/android-sdk
+./gradlew assembleRelease
+```
+
+产物：`app/build/outputs/apk/release/app-release-unsigned.apk`，需自行 zipalign + apksigner 签名。
+
+## 实现要点
+
+- **acw_sc__v2 挑战**：阿里云 ESA 的 JS 挑战，用纯 Java 移植 `_unsbox` + `_hexXor` 算法；
+  关键在于 `acw_tc` / `cdn_sec_tc` 只按域发送，不能作为全局 Cookie 跨域带到 CDN
+- **「下载得到 HTML」防护**：按正文内容识别页面（CDN 会把错误页标成 `application/octet-stream`），
+  挑战页/验证页/跳转页全部在内存里处理，绝不写入文件；失败时保存诊断页供排查
+- **文件名还原**：蓝奏云分享页 `<title>` 已改成「文件」，改为优先解析
+  `Content-Disposition`，已入队任务会自动改名
+- **文件夹分享**：`filemoreajax.php` 接口，`t`/`k` 校验变量名每次请求随机生成，
+  按值的形态（10 位时间戳 / 32 位十六进制）识别
+
+## 已知限制
+
+- 单次上传无分块 / 断点续传
+- 子文件夹列表接口（`task=47`）已被服务端下线，网盘内看不到嵌套子文件夹
+- 文件夹分享每页 50 条，翻页接口有频率限制，过快会返回「请刷新，重试」
+- **未在真实 Android 2.3 设备上验证**：已完成 minSdk、v1 签名、native 符号表、
+  dex 高版本引用扫描等静态验证；真机加载失败会自动降级系统 TLS
+
+## 更新日志
+
+| 版本 | 内容 |
+|---|---|
+| `1.2.0-beta.<ts>` | 新增文件夹分享浏览；图标自适应；下载文件名修复；下载 HTML 彻底防护；运行时存储权限；账号管理；Cookie 导出 |
+| `1.1.0-beta` | WebView 登录、设置界面、内建下载器 |
+| `1.0.0` | 首个版本：登录、上传、下载 |
+
+## 发布约定
+
+- 每次代码更新都会同步到 GitHub 与 Gitee
+- **只有明确要求时才发 Release**，否则只推代码

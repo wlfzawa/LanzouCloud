@@ -1,0 +1,31 @@
+# 构建产物
+build/
+app/build/
+.gradle/
+.cxx/
+app/.cxx/
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+
+# 本地环境（含 SDK 绝对路径，因机器而异）
+local.properties
+.idea/
+*.iml
+.DS_Store
+
+# 签名文件
+*.jks
+*.keystore
+*.p12
+
+# 敏感凭据：蓝奏云登录 Cookie、上传脚本的临时文件
+tools/cookie.txt
+tools/*.cookie
+tools/__pycache__/
+**/__pycache__/
+
+# 日志
+*.log

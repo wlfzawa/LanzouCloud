@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      基础主题：必须用 API 9 就存在的原生主题。
+      原 Holo 主题（Theme.Holo.*）是 API 11+，在 Android 2.3 上会导致启动崩溃。
+      界面自带标题栏，因此用 NoTitleBar 即可。
+    -->
+    <style name="Theme.LanzouCloud" parent="android:Theme.Light.NoTitleBar">
+    </style>
+</resources>

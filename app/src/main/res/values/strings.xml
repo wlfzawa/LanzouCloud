@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">蓝奏云</string>
+    <string name="login">登录</string>
+    <string name="cookie_hint">粘贴浏览器 Cookie（需含 ylogin 和 phpdisk_info）</string>
+    <string name="upload">上传</string>
+    <string name="download">下载</string>
+    <string name="refresh">刷新</string>
+    <string name="new_folder">新建文件夹</string>
+    <string name="download_link">下载分享链接</string>
+    <string name="logout">退出登录</string>
+    <string name="back">返回</string>
+</resources>
