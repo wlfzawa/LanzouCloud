@@ -50,11 +50,7 @@ public final class ThemeHelper {
         int m = mode(base);
         if (Build.VERSION.SDK_INT < 17 || m == MODE_AUTO) return base;
         try {
-            Configuration cfg = new Configuration(base.getResources().getConfiguration());
-            int night = (m == MODE_DARK) ? Configuration.UI_MODE_NIGHT_YES
-                    : Configuration.UI_MODE_NIGHT_NO;
-            cfg.uiMode = (cfg.uiMode & ~Configuration.UI_MODE_NIGHT_MASK) | night;
-            return base.createConfigurationContext(cfg);
+            return ThemeHelper17.wrap(base, m == MODE_DARK);
         } catch (Throwable t) {
             return base;
         }
