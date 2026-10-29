@@ -1,8 +1,22 @@
 # 协作约定
 
+## 同步规则（双远端）
+
+- 仓库有两个远端：`gitee`（主源，国内可达）、`github`（镜像）
+- 代码更新后执行 **`tools/sync.sh`** 即可，不要手动连续 push 两个远端：
+  ```bash
+  tools/sync.sh            # 推 Gitee -> 推 GitHub -> 触发 Actions 立即同步
+  tools/sync.sh --github   # GitHub 网络恢复后单独补推
+  ```
+- **GitHub 推送失败不算问题**：`.github/workflows/sync-gitee.yml` 每 20 分钟把 Gitee 领先的
+  提交快进到 GitHub，`tools/sync.sh` 推完也会 `workflow_dispatch` 触发一次
+- **Gitee 推送失败才算失败**：代码没落到任何远端，必须重试
+- 工作流是双向的但**不覆盖分叉**：GitHub 领先时反向快进 Gitee（用 `GITEE_TOKEN`），
+  两边分叉时报错退出，需人工合并后再同步
+- 因此**不要直接在 GitHub 网页上改代码**（会被当成分叉）；要改就本地改、提交、同步
+
 ## 发布规则
 
-- **每次代码更新都要同步到两个远端**：`git push github main`、`git push gitee main`
 - **只有明确要求时才发 Release**，没说要发就只同步代码
 - 发 Release 用 `tools/publish.py`，Token 通过环境变量传入：
   ```bash
@@ -15,6 +29,7 @@
 
 - **绝不提交** `tools/cookie.txt`（蓝奏云登录凭据），已在 `.gitignore` 中排除
 - Token 只走环境变量或命令行，不写进任何入库文件
+- `GITEE_TOKEN` 另存于 GitHub Actions Secret，仅供同步工作流反向推送使用
 
 ## 构建
 

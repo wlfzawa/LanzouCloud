@@ -1,0 +1,106 @@
+name: Sync with Gitee
+
+# 双远端同步（Gitee 为主源）
+# 1) 本地 push 优先走 Gitee，GitHub 推不上去时也不会丢代码；
+# 2) 本工作流定时把 Gitee 上领先的提交快进到 GitHub；
+# 3) 若 GitHub 反而领先（例如网页上直接改过），用 GITEE_TOKEN 反向推回 Gitee；
+# 4) 两边分叉时只报警，不做任何覆盖。
+on:
+  schedule:
+    - cron: '*/20 * * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-with-gitee
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Gitee <-> GitHub
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Sync branches and tags
+        env:
+          GITEE_PATH: gitee.com/wlfzawa/LanzouCloud.git
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+
+          GH_URL="https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
+          if [ -n "${GITEE_TOKEN:-}" ]; then
+            GITEE_URL="https://oauth2:${GITEE_TOKEN}@${GITEE_PATH}"
+          else
+            GITEE_URL="https://${GITEE_PATH}"
+          fi
+
+          echo "== 拉取 Gitee 仓库"
+          rm -rf work.git
+          for i in 1 2 3; do
+            if git clone --mirror "$GITEE_URL" work.git; then break; fi
+            echo "克隆失败，第 $i 次重试"
+            rm -rf work.git
+            sleep 5
+          done
+          if [ ! -d work.git ]; then
+            echo "::error::无法克隆 Gitee 仓库，请检查仓库是否公开或 GITEE_TOKEN 是否有效"
+            exit 1
+          fi
+
+          cd work.git
+          git remote add github "$GH_URL"
+          echo "== 拉取 GitHub 引用"
+          if ! git fetch --prune github '+refs/heads/*:refs/remotes/github/*'; then
+            echo "::error::无法读取 GitHub 仓库"
+            exit 1
+          fi
+
+          BRANCH=main
+          GITEE_HEAD=$(git rev-parse "refs/heads/$BRANCH" 2>/dev/null || true)
+          GH_HEAD=$(git rev-parse "refs/remotes/github/$BRANCH" 2>/dev/null || true)
+          echo "Gitee  $BRANCH = ${GITEE_HEAD:-<空>}"
+          echo "GitHub $BRANCH = ${GH_HEAD:-<空>}"
+
+          if [ -z "$GITEE_HEAD" ]; then
+            echo "::error::Gitee 上没有 $BRANCH 分支，停止同步"
+            exit 1
+          fi
+
+          if [ -z "$GH_HEAD" ]; then
+            echo "== GitHub 上还没有 $BRANCH，直接创建"
+            git push github "refs/heads/$BRANCH:refs/heads/$BRANCH" || exit 1
+          elif [ "$GITEE_HEAD" = "$GH_HEAD" ]; then
+            echo "== 两个远端已一致"
+          elif git merge-base --is-ancestor "$GH_HEAD" "$GITEE_HEAD"; then
+            echo "== GitHub 落后，快进到 Gitee 版本"
+            git push github "refs/heads/$BRANCH:refs/heads/$BRANCH" || exit 1
+          elif git merge-base --is-ancestor "$GITEE_HEAD" "$GH_HEAD"; then
+            echo "== GitHub 领先，反向快进到 Gitee"
+            if [ -z "${GITEE_TOKEN:-}" ]; then
+              echo "::error::GitHub 领先但未配置 GITEE_TOKEN，无法反向同步"
+              exit 1
+            fi
+            git push origin "refs/remotes/github/$BRANCH:refs/heads/$BRANCH" || exit 1
+          else
+            echo "::error::两个仓库的 $BRANCH 已经分叉，需要人工合并不再自动覆盖"
+            echo "以下为两边不同的提交（左=Gitee，右=GitHub）："
+            git log --oneline --left-right "refs/heads/$BRANCH...refs/remotes/github/$BRANCH" | head -40
+            exit 1
+          fi
+
+          echo "== 同步标签（以 Gitee 为准）"
+          if git tag | grep -q .; then
+            git push github '+refs/tags/*:refs/tags/*' || echo "::warning::有标签推送失败（可能已存在同名不同内容）"
+          else
+            echo "Gitee 上暂无标签"
+          fi
+
+          echo "== 同步完成"
+          git log --oneline -3 "refs/heads/$BRANCH"
