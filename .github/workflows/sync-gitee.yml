@@ -90,6 +90,7 @@ jobs:
               exit 1
             fi
             git push gitee "refs/remotes/github/$BRANCH:refs/heads/$BRANCH" || exit 1
+            git update-ref "refs/heads/$BRANCH" "refs/remotes/github/$BRANCH"
           else
             echo "::error::两个仓库的 $BRANCH 已经分叉，需要人工合并不再自动覆盖"
             echo "以下为两边不同的提交（左=Gitee，右=GitHub）："
