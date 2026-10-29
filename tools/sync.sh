@@ -66,7 +66,27 @@ fi
 
 if [ "$MODE" = "both" ] || [ "$MODE" = "github" ]; then
   echo "== 推送到 GitHub（镜像）"
-  if retry 2 git "${GIT_OPTS[@]}" push github "$BRANCH"; then
+
+  # github.com:443 经常连不上，但 ssh.github.com:443 通常可用，所以优先走 SSH
+  if ! git remote | grep -qx 'github-ssh'; then
+    SSH_URL=$(git remote get-url github 2>/dev/null \
+      | sed -E 's#^https?://([^@/]*@)?github\.com/#git@github.com:#')
+    case "$SSH_URL" in
+      git@github.com:*) git remote add github-ssh "$SSH_URL" 2>/dev/null ;;
+    esac
+  fi
+
+  GH_OK=0
+  if git remote | grep -qx 'github-ssh'; then
+    echo "   · SSH 通道"
+    if retry 2 timeout 300 git push github-ssh "$BRANCH"; then GH_OK=1; fi
+  fi
+  if [ "$GH_OK" = "0" ]; then
+    echo "   · HTTPS 通道"
+    if retry 2 timeout 150 git "${GIT_OPTS[@]}" push github "$BRANCH"; then GH_OK=1; fi
+  fi
+
+  if [ "$GH_OK" = "1" ]; then
     PUSH_GITHUB=1
     echo "   GitHub 完成"
   else
