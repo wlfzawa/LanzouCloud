@@ -13,7 +13,8 @@
 - **文件管理**：浏览目录、进入子文件夹、上传文件、新建文件夹
 - **文件分享**：生成文件 / 文件夹分享链接与提取码
 - **分享链接下载**：支持 `https://xxx.lanzn.com/iXXXXXX` 单文件链接
-- **文件夹分享浏览**：支持 `https://xxx.lanzout.com/bXXXXXX` 文件夹链接，输入提取码后列出文件并逐个下载
+- **文件夹分享浏览**：支持 `https://xxx.lanzout.com/bXXXXXX` 文件夹链接，输入提取码后列出文件，
+  可单个下载，也可「全部下载」——自动翻完所有分页后逐个入队
 - **剪贴板自动拾取**：回到 App 时自动识别剪贴板里的蓝奏云链接与提取码，一键打开；首次使用会先询问
 - **历史记录**：打开/下载过的链接、已完成/失败的下载任务都会持久保存，重启后仍可查看与打开
 - **内建下载器**：后台队列、进度显示、失败重试、重名自动改名
@@ -27,11 +28,11 @@
 |---|---|
 | GitHub Releases | https://github.com/wlfzawa/LanzouCloud/releases |
 | Gitee Releases | https://gitee.com/wlfzawa/LanzouCloud/releases |
-| 蓝奏云 | https://wwbkc.lanzn.com/itNN74dsdknc 提取码 `d6a7` |
+| 蓝奏云 | https://wwbkc.lanzn.com/igLfk4dwtowf 提取码 `e5po` |
 
 同一版本用同一证书签名，可直接覆盖安装。
 
-当前版本：`1.3.0-beta.1793278452`（2.9 MB）
+当前版本：`1.3.0-beta.1793281559`（2.8 MB）
 
 ## 兼容性
 
@@ -117,7 +118,7 @@ export ANDROID_HOME=/opt/android-sdk
 
 | 版本 | 内容 |
 |---|---|
-| `1.3.0-beta.<ts>` | 剪贴板自动拾取；亮色/深色/跟随系统；链接与下载历史持久化；json/txt 导入 Cookie；系统文件夹选择器指定下载目录 |
+| `1.3.0-beta.<ts>` | 文件夹分享支持一键全部下载（自动翻页）；根目录按返回键二次确认；剪贴板自动拾取；亮色/深色/跟随系统；链接与下载历史持久化；json/txt 导入 Cookie；系统文件夹选择器指定下载目录 |
 | `1.2.0-beta.<ts>` | 新增文件夹分享浏览；图标自适应；下载文件名修复；下载 HTML 彻底防护；运行时存储权限；账号管理；Cookie 导出 |
 | `1.1.0-beta` | WebView 登录、设置界面、内建下载器 |
 | `1.0.0` | 首个版本：登录、上传、下载 |

@@ -218,8 +218,19 @@ public class MainActivity extends BaseActivity {
             pathText.setText(nameStack.pop());
             loadDir(currentFolderId);
         } else {
-            finish();
+            // 已在根目录：先确认，避免误触直接退出
+            confirmExit();
         }
+    }
+
+    /** 根目录按返回键时的退出确认 */
+    private void confirmExit() {
+        new AlertDialog.Builder(this)
+                .setTitle("退出")
+                .setMessage("当前已经在网盘根目录，要退出吗？")
+                .setPositiveButton("退出", (d, w) -> finish())
+                .setNegativeButton("留在网盘", null)
+                .show();
     }
 
     @Override
@@ -451,7 +462,7 @@ public class MainActivity extends BaseActivity {
                 .setTitle("打开分享链接")
                 .setMessage("支持文件分享与文件夹分享：\n"
                         + "· https://xxx.lanzn.com/iXXXXXX\n"
-                        + "· https://xxx.lanzn.com/bXXXXXX（文件夹）")
+                        + "· https://xxx.lanzn.com/bXXXXXX（文件夹，可一键全部下载）")
                 .setView(ll)
                 .setPositiveButton("打开", (dialog, which) -> {
                     String url = linkInput.getText().toString().trim();
