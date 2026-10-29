@@ -24,7 +24,7 @@
             android:layout_gravity="center_vertical"
             android:paddingLeft="10dp"
             android:text="下载管理"
-            android:textColor="@color/white"
+            android:textColor="@color/on_primary"
             android:textSize="18sp"
             android:textStyle="bold" />
 
@@ -41,6 +41,6 @@
         android:layout_height="match_parent"
         android:divider="@color/divider"
         android:dividerHeight="1dp"
-        android:background="@color/white" />
+        android:background="@color/surface" />
 
 </LinearLayout>

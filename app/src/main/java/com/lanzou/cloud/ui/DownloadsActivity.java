@@ -1,6 +1,5 @@
 package com.lanzou.cloud.ui;
 
-import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
 import android.net.Uri;
@@ -24,7 +23,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /** 内建下载器界面：任务列表、进度、打开文件、删除记录 */
-public class DownloadsActivity extends Activity {
+public class DownloadsActivity extends BaseActivity {
 
     private DownloadCenter center;
     private ListView listView;
@@ -61,7 +60,7 @@ public class DownloadsActivity extends Activity {
             DownloadCenter.Task t = adapter.getItem(position);
             if (t == null) return;
             if (t.status == DownloadCenter.DONE) {
-                openFile(t.target);
+                openTask(t);
             } else if (t.status == DownloadCenter.FAILED) {
                 showFailed(t);
             }
@@ -99,21 +98,40 @@ public class DownloadsActivity extends Activity {
     }
 
     private void showFailed(final DownloadCenter.Task t) {
-        final File dbg = new File(t.target.getPath() + ".error.html");
+        final File dbg = t.target == null ? null : new File(t.target.getPath() + ".error.html");
         AlertDialog.Builder b = new AlertDialog.Builder(this)
                 .setTitle("下载失败")
-                .setMessage(t.error == null || t.error.isEmpty() ? "未知错误" : t.error)
-                .setPositiveButton("重试", (d, w) -> {
-                    if (center.retry(t)) {
-                        Toast.makeText(this, "已重新加入下载队列", Toast.LENGTH_SHORT).show();
-                        refresh();
-                    }
-                })
+                .setMessage((t.error == null || t.error.isEmpty() ? "未知错误" : t.error)
+                        + (t.historical ? "\n\n这是历史记录，当时的下载链接已经失效，请重新获取分享链接。" : ""))
                 .setNegativeButton("关闭", null);
-        if (dbg.exists()) {
+        if (!t.historical) {
+            b.setPositiveButton("重试", (d, w) -> {
+                if (center.retry(t)) {
+                    Toast.makeText(this, "已重新加入下载队列", Toast.LENGTH_SHORT).show();
+                    refresh();
+                } else {
+                    Toast.makeText(this, "链接已失效，请重新下载", Toast.LENGTH_SHORT).show();
+                }
+            });
+        }
+        if (dbg != null && dbg.exists()) {
             b.setNeutralButton("查看诊断页", (d, w) -> openFile(dbg));
         }
         b.show();
+    }
+
+    /** 打开一条下载记录：SAF 文档直接给 content://，File 走自研 provider */
+    private void openTask(DownloadCenter.Task t) {
+        if (t.targetUri != null && Build.VERSION.SDK_INT >= 21) {
+            openUri(t.targetUri, t.name);
+            return;
+        }
+        if (t.target == null || !t.target.exists()) {
+            Toast.makeText(this, "文件不存在：" + (t.target == null ? t.displayPath() : t.target.getPath()),
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        openFile(t.target);
     }
 
     private void openFile(File f) {
@@ -133,8 +151,15 @@ public class DownloadsActivity extends Activity {
         }
     }
 
-    private static String guessMime(String name) {
-        return MiniFileProvider.guessMime(name);
+    private void openUri(Uri uri, String name) {
+        try {
+            Intent i = new Intent(Intent.ACTION_VIEW);
+            i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            i.setDataAndType(uri, MiniFileProvider.guessMime(name));
+            startActivity(i);
+        } catch (Exception e) {
+            Toast.makeText(this, "没有应用能打开此文件\n" + uri, Toast.LENGTH_LONG).show();
+        }
     }
 
     private class TaskAdapter extends BaseAdapter {
@@ -183,7 +208,7 @@ public class DownloadsActivity extends Activity {
                     bar.setIndeterminate(pct < 0);
                     break;
                 case DownloadCenter.DONE:
-                    status.setText("完成 · 点击打开\n" + t.target.getPath());
+                    status.setText("完成 · 点击打开\n" + t.displayPath());
                     bar.setProgress(100);
                     bar.setIndeterminate(false);
                     break;

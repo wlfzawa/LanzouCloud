@@ -1,6 +1,5 @@
 package com.lanzou.cloud.ui;
 
-import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.ProgressDialog;
 import android.content.Intent;
@@ -25,7 +24,7 @@ import java.util.List;
  * 文件夹分享浏览：输入 https://xxx.lanzout.com/bXXXXXX 形式的链接后，
  * 列出文件夹内所有文件（每页 50 条），点击即可下载。
  */
-public class ShareBrowseActivity extends Activity {
+public class ShareBrowseActivity extends BaseActivity {
 
     public static final String EXTRA_URL = "share_url";
     public static final String EXTRA_PWD = "share_pwd";
@@ -89,6 +88,8 @@ public class ShareBrowseActivity extends Activity {
                     pd.dismiss();
                     ref = r;
                     titleText.setText(first.name);
+                    HistoryStore.get(ShareBrowseActivity.this).add(
+                            url, pwd, first.name, HistoryStore.TYPE_FOLDER);
                     applyPage(first, true);
                 });
             } catch (final LanzouException e) {

@@ -24,7 +24,7 @@
             android:layout_gravity="center_vertical"
             android:paddingLeft="10dp"
             android:text="账号管理"
-            android:textColor="@color/white"
+            android:textColor="@color/on_primary"
             android:textSize="18sp"
             android:textStyle="bold" />
     </LinearLayout>
@@ -32,10 +32,10 @@
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="#F5F5F5"
+        android:background="@color/bg"
         android:padding="8dp"
         android:text="点击账号可切换、重命名或删除；「当前」为正在使用的账号"
-        android:textColor="#666666"
+        android:textColor="@color/text_secondary"
         android:textSize="12sp" />
 
     <ListView
@@ -43,7 +43,7 @@
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:background="@color/white"
+        android:background="@color/surface"
         android:divider="@color/divider"
         android:dividerHeight="1dp" />
 

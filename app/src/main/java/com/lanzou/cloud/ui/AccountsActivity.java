@@ -1,6 +1,5 @@
 package com.lanzou.cloud.ui;
 
-import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.ProgressDialog;
 import android.content.Intent;
@@ -24,7 +23,7 @@ import java.util.List;
 import java.util.Locale;
 
 /** 账号管理：多账号列表，支持切换 / 重命名 / 删除 / 登录新账号 */
-public class AccountsActivity extends Activity {
+public class AccountsActivity extends BaseActivity {
 
     private Session session;
     private ListView accountList;

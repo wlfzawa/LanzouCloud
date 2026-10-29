@@ -14,7 +14,7 @@ android {
         // 每次构建自动用当前 unix 时间戳作为版本号，保证每版唯一且递增
         val buildTs = System.currentTimeMillis() / 1000L
         versionCode = buildTs.toInt()
-        versionName = "1.2.0-beta.$buildTs"
+        versionName = "1.3.0-beta.$buildTs"
 
         ndk {
             abiFilters += listOf("armeabi-v7a", "arm64-v8a")

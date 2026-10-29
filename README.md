@@ -8,14 +8,18 @@
 ## 功能
 
 - **账号登录**：粘贴 Cookie 登录，或在高版本系统上用内置 WebView 登录并自动提取 Cookie
+- **Cookie 导入**：支持 `json`（对象 / 数组 / 浏览器插件导出）与 `txt`（Cookie 字符串 / Netscape cookies.txt），导入后逐个在线校验
 - **多账号管理**：登录过的账号自动保存，可一键切换、重命名、删除
 - **文件管理**：浏览目录、进入子文件夹、上传文件、新建文件夹
 - **文件分享**：生成文件 / 文件夹分享链接与提取码
 - **分享链接下载**：支持 `https://xxx.lanzn.com/iXXXXXX` 单文件链接
 - **文件夹分享浏览**：支持 `https://xxx.lanzout.com/bXXXXXX` 文件夹链接，输入提取码后列出文件并逐个下载
-- **内建下载器**：后台队列、进度显示、失败重试、下载目录可改、重名自动改名
+- **剪贴板自动拾取**：回到 App 时自动识别剪贴板里的蓝奏云链接与提取码，一键打开；首次使用会先询问
+- **历史记录**：打开/下载过的链接、已完成/失败的下载任务都会持久保存，重启后仍可查看与打开
+- **内建下载器**：后台队列、进度显示、失败重试、重名自动改名
+- **下载位置**：设置里可直接用系统文件选择器选文件夹（Android 5.0+，无需存储权限），也支持输入路径
+- **外观**：亮色 / 深色 / 跟随系统三档，切换即时生效
 - **Cookie 导出**：复制到剪贴板或导出 txt 分享
-- **深色无关的精简界面**：`Theme.Light.NoTitleBar`，兼容 API 9
 
 ## 下载
 
@@ -27,7 +31,7 @@
 
 同一版本用同一证书签名，可直接覆盖安装。
 
-当前版本：`1.2.0-beta.1793203898`（2.9 MB）
+当前版本：`1.3.0-beta.1793277600`（2.9 MB）
 
 ## 兼容性
 
@@ -37,7 +41,10 @@
 | targetSdk | 34 |
 | ABI | `armeabi-v7a`、`arm64-v8a` |
 | 签名 | v1（JAR）+ v2 |
-| 版本号 | `1.2.0-beta.<unix 时间戳>`，每构建一次自动递增 |
+| 版本号 | `1.3.0-beta.<unix 时间戳>`，每构建一次自动递增 |
+
+深色模式：Android 4.2（API 17）及以上可手动切换；更低版本没有覆盖 `uiMode` 的公开 API，
+只能使用亮色（系统本身也没有全局深色）。
 
 TLS 按系统版本自动分层：
 
@@ -71,7 +78,8 @@ wolfssljni 的 Java 层（它继承 `ExtendedSSLSession` 等 API 24+ 类型，�
 
 | 系统组件 | 问题 | 处理 |
 |---|---|---|
-| `Theme.Holo.*` | API 11+ | 改用 `Theme.Light.NoTitleBar` |
+| `Theme.Holo.*` | API 11+ | 改用 `Theme.Light.NoTitleBar` / `Theme.NoTitleBar` |
+| `values-night` + `createConfigurationContext` | 手动切深色需 API 17+ | 低版本仅亮色，见上文 |
 | `android.widget.Switch` | API 14+ | 改用 `CheckBox` |
 | `VectorDrawable` | API 21+ | 改用各密度 PNG |
 | `androidx.core` FileProvider | 最低 API 14 | 自研 `MiniFileProvider` |
@@ -109,6 +117,7 @@ export ANDROID_HOME=/opt/android-sdk
 
 | 版本 | 内容 |
 |---|---|
+| `1.3.0-beta.<ts>` | 剪贴板自动拾取；亮色/深色/跟随系统；链接与下载历史持久化；json/txt 导入 Cookie；系统文件夹选择器指定下载目录 |
 | `1.2.0-beta.<ts>` | 新增文件夹分享浏览；图标自适应；下载文件名修复；下载 HTML 彻底防护；运行时存储权限；账号管理；Cookie 导出 |
 | `1.1.0-beta` | WebView 登录、设置界面、内建下载器 |
 | `1.0.0` | 首个版本：登录、上传、下载 |

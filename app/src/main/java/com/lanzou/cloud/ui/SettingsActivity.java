@@ -1,33 +1,45 @@
 package com.lanzou.cloud.ui;
 
-import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.ProgressDialog;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.widget.Button;
-import android.widget.EditText;
 import android.widget.CheckBox;
+import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import com.lanzou.cloud.R;
 import com.lanzou.cloud.core.MiniFileProvider;
+import com.lanzou.cloud.core.SafUtil;
 
 import java.io.File;
 import java.io.FileOutputStream;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.List;
 
-/** 设置界面：账号管理、Cookie 导出、下载位置、下载逻辑、跳转浏览器 */
-public class SettingsActivity extends Activity {
+/** 设置界面：账号、Cookie 导入导出、下载位置、外观主题、剪贴板、历史记录 */
+public class SettingsActivity extends BaseActivity {
+
+    private static final int REQ_TREE = 3101;
 
     private Session session;
     private AppPrefs prefs;
     private TextView textAccount;
     private TextView textDownloadDir;
+    private TextView textTheme;
     private CheckBox switchBrowser;
     private CheckBox switchOverwrite;
+    private CheckBox switchClipboard;
+    /** 刷新界面时回填 CheckBox，避免触发监听弹 toast */
+    private boolean binding;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -39,13 +51,18 @@ public class SettingsActivity extends Activity {
 
         textAccount = findViewById(R.id.text_account);
         textDownloadDir = findViewById(R.id.text_download_dir);
+        textTheme = findViewById(R.id.btn_theme);
         switchBrowser = findViewById(R.id.switch_browser);
         switchOverwrite = findViewById(R.id.switch_overwrite);
+        switchClipboard = findViewById(R.id.switch_clipboard);
         Button backBtn = findViewById(R.id.settings_back_btn);
         Button switchAccountBtn = findViewById(R.id.btn_switch_account);
         Button manageAccountsBtn = findViewById(R.id.btn_manage_accounts);
         Button exportCookieBtn = findViewById(R.id.btn_export_cookie);
+        Button importCookieBtn = findViewById(R.id.btn_import_cookie);
+        Button pickDirBtn = findViewById(R.id.btn_pick_dir);
         Button changeDirBtn = findViewById(R.id.btn_change_dir);
+        Button historyBtn = findViewById(R.id.btn_history);
         Button browserOpenBtn = findViewById(R.id.btn_browser_open);
 
         backBtn.setOnClickListener(v -> finish());
@@ -53,13 +70,29 @@ public class SettingsActivity extends Activity {
         manageAccountsBtn.setOnClickListener(v ->
                 startActivity(new Intent(SettingsActivity.this, AccountsActivity.class)));
         exportCookieBtn.setOnClickListener(v -> exportCookie());
+        importCookieBtn.setOnClickListener(v -> CookieImportFlow.pick(this));
+        pickDirBtn.setOnClickListener(v -> pickFolder());
         changeDirBtn.setOnClickListener(v -> changeDir());
+        historyBtn.setOnClickListener(v ->
+                startActivity(new Intent(SettingsActivity.this, HistoryActivity.class)));
         browserOpenBtn.setOnClickListener(v -> openLanzouInBrowser());
+        textTheme.setOnClickListener(v -> chooseTheme());
 
         switchBrowser.setChecked(prefs.isDownloadViaBrowser());
         switchBrowser.setOnCheckedChangeListener((btn, checked) -> prefs.setDownloadViaBrowser(checked));
         switchOverwrite.setChecked(prefs.isOverwrite());
         switchOverwrite.setOnCheckedChangeListener((btn, checked) -> prefs.setOverwrite(checked));
+        switchClipboard.setChecked(prefs.isClipboardAuto());
+        switchClipboard.setOnCheckedChangeListener((btn, checked) -> {
+            if (binding) return;
+            prefs.setClipboardAuto(checked);
+            if (checked) {
+                prefs.setClipboardAsked(true);
+                toast("已开启：回到主界面时会自动识别剪贴板里的分享链接");
+            } else {
+                toast("已关闭剪贴板自动拾取");
+            }
+        });
 
         TextView textVersion = findViewById(R.id.text_version);
         try {
@@ -83,9 +116,26 @@ public class SettingsActivity extends Activity {
         int count = session.listAccounts().size();
         textAccount.setText("当前账号（ylogin）：" + (uid == null ? "未登录" : uid)
                 + "   |   已保存账号：" + count + " 个");
+
+        textDownloadDir.setText("当前目录：" + currentDirText());
+        textTheme.setText("主题：" + ThemeHelper.modeName(this));
+        binding = true;
+        switchClipboard.setChecked(prefs.isClipboardAuto());
+        binding = false;
+    }
+
+    private String currentDirText() {
+        Uri tree = prefs.getDownloadTree();
+        if (tree != null) {
+            String name = prefs.getDownloadTreeName();
+            if (name == null || name.isEmpty()) name = SafUtil.displayName(this, tree);
+            if (name == null || name.isEmpty()) name = "已选文件夹";
+            return "系统文件夹「" + name + "」"
+                    + (SafUtil.hasPermission(this, tree) ? "" : "（授权已失效，请重新选择）");
+        }
         String dir = prefs.getDownloadDir();
-        textDownloadDir.setText("当前目录：" + (dir == null || dir.trim().isEmpty()
-                ? "默认（应用专属目录）" : dir));
+        if (dir == null || dir.trim().isEmpty()) return "默认（应用专属目录）";
+        return "自定义路径：" + dir;
     }
 
     private void confirmLogout() {
@@ -103,7 +153,28 @@ public class SettingsActivity extends Activity {
                 .show();
     }
 
-    // ================================================================ Cookie 导出
+    // ================================================================ 外观
+
+    private void chooseTheme() {
+        // API 17 以下没有覆盖 uiMode 的公开 API，只能亮色，避免出现「深色框架 + 亮色页面」
+        final String[] items = Build.VERSION.SDK_INT >= 17
+                ? new String[]{"跟随系统", "亮色", "深色"}
+                : new String[]{"跟随系统", "亮色"};
+        int current = prefs.getThemeMode();
+        if (current >= items.length) current = 0;
+        new AlertDialog.Builder(this)
+                .setTitle("主题")
+                .setSingleChoiceItems(items, current, (dialog, which) -> {
+                    prefs.setThemeMode(which);
+                    dialog.dismiss();
+                    // 立即重建当前界面，回到主界面时其余页面会在 onResume 里自动跟着换
+                    recreateCompat();
+                })
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
+    // ================================================================ Cookie 导出 / 导入
 
     private void exportCookie() {
         final String cookie = session.getCookie();
@@ -160,21 +231,129 @@ public class SettingsActivity extends Activity {
         }).start();
     }
 
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQ_TREE && resultCode == RESULT_OK) {
+            handleTree(data == null ? null : data.getData());
+        } else if (requestCode == CookieImportFlow.REQ_IMPORT_FILE && resultCode == RESULT_OK) {
+            CookieImportFlow.handle(this, data, this::refreshUi);
+        }
+    }
+
     // ================================================================ 下载目录
 
     private void changeDir() {
-        final String[] options = {"使用默认目录（应用专属）", "自定义路径..."};
+        final String[] options = {
+                "使用默认目录（应用专属）",
+                SafUtil.isSupported() ? "选择文件夹（系统选择器）" : "浏览并选择文件夹",
+                "输入路径（高级）"
+        };
         new AlertDialog.Builder(this)
-                .setTitle("修改下载目录")
+                .setTitle("下载目录")
                 .setItems(options, (dialog, which) -> {
                     if (which == 0) {
                         prefs.setDownloadDir("");
+                        prefs.clearDownloadTree();
                         refreshUi();
                         toast("已切换为默认目录");
+                    } else if (which == 1) {
+                        pickFolder();
                     } else {
                         inputCustomDir();
                     }
                 })
+                .show();
+    }
+
+    /** 让用户直接选一个文件夹：Android 5.0+ 用系统文件选择器，更老的版本用内置浏览 */
+    private void pickFolder() {
+        if (!SafUtil.isSupported()) {
+            browseDir(Environment.getExternalStorageDirectory());
+            return;
+        }
+        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+        i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+                | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        try {
+            startActivityForResult(i, REQ_TREE);
+        } catch (Exception e) {
+            toast("系统没有文件选择器，改用内置浏览：" + e.getMessage());
+            browseDir(Environment.getExternalStorageDirectory());
+        }
+    }
+
+    private void handleTree(Uri tree) {
+        if (tree == null) return;
+        try {
+            getContentResolver().takePersistableUriPermission(tree,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        } catch (Exception e) {
+            toast("保存授权失败：" + e.getMessage());
+        }
+        String name = SafUtil.displayName(this, tree);
+        boolean writable = SafUtil.probe(this, tree);
+        prefs.setDownloadTree(tree, name.isEmpty() ? "已选文件夹" : name);
+        // 系统选择器优先，清掉旧的路径设置避免混淆
+        prefs.setDownloadDir("");
+        refreshUi();
+        if (writable) {
+            toast("下载目录已设为「" + (name.isEmpty() ? "已选文件夹" : name) + "」");
+        } else {
+            new AlertDialog.Builder(this)
+                    .setTitle("文件夹可能不可写")
+                    .setMessage("已保存这个文件夹，但试写文件失败。可能原因：\n"
+                            + "· 该目录只读（如部分系统目录）\n"
+                            + "· 授权被系统回收\n\n下载时若失败，请换一个文件夹（推荐「Download」）。")
+                    .setPositiveButton("知道了", null)
+                    .show();
+        }
+    }
+
+    /** API 9~20 的简易目录浏览：列出子目录，点进去或直接选用当前目录 */
+    private void browseDir(final File dir) {
+        if (dir == null || !dir.exists() || !dir.isDirectory()) {
+            toast("目录不可用：" + dir);
+            return;
+        }
+        File[] all = dir.listFiles();
+        final List<File> dirs = new ArrayList<File>();
+        if (all != null) {
+            for (File f : all) {
+                if (f.isDirectory() && !f.getName().startsWith(".")) dirs.add(f);
+            }
+        }
+        File[] sorted = dirs.toArray(new File[0]);
+        Arrays.sort(sorted, new Comparator<File>() {
+            @Override
+            public int compare(File a, File b) {
+                return a.getName().compareToIgnoreCase(b.getName());
+            }
+        });
+
+        String[] items = new String[sorted.length + 2];
+        items[0] = "✓ 使用当前目录";
+        items[1] = ".. 上一级";
+        for (int i = 0; i < sorted.length; i++) {
+            items[i + 2] = "[目录] " + sorted[i].getName();
+        }
+        new AlertDialog.Builder(this)
+                .setTitle(dir.getAbsolutePath())
+                .setItems(items, (dialog, which) -> {
+                    if (which == 0) {
+                        prefs.clearDownloadTree();
+                        prefs.setDownloadDir(dir.getAbsolutePath());
+                        refreshUi();
+                        toast("下载目录已设为：" + dir.getAbsolutePath());
+                    } else if (which == 1) {
+                        File parent = dir.getParentFile();
+                        if (parent != null) browseDir(parent);
+                    } else {
+                        browseDir(sorted[which - 2]);
+                    }
+                })
+                .setNegativeButton("取消", null)
                 .show();
     }
 
@@ -188,10 +367,12 @@ public class SettingsActivity extends Activity {
         }
         new AlertDialog.Builder(this)
                 .setTitle("自定义下载目录")
-                .setMessage("输入可写的绝对路径（Android 11+ 受分区存储限制，建议用默认目录）")
+                .setMessage("输入可写的绝对路径。\nAndroid 11+ 受分区存储限制，公共目录写不进去，"
+                        + "建议改用上面的「选择文件夹」。")
                 .setView(input)
                 .setPositiveButton("保存", (dialog, which) -> {
                     String p = input.getText().toString().trim();
+                    prefs.clearDownloadTree();
                     prefs.setDownloadDir(p);
                     refreshUi();
                     if (p.isEmpty()) {

@@ -1,6 +1,5 @@
 package com.lanzou.cloud.ui;
 
-import android.app.Activity;
 import android.content.Intent;
 import android.os.Build;
 import android.os.Bundle;
@@ -18,7 +17,7 @@ import com.lanzou.cloud.core.LanzouException;
 /**
  * 网页登录：内嵌 WebView 打开蓝奏云网页，用户登录后自动提取 Cookie 并进入主界面。
  */
-public class WebViewLoginActivity extends Activity {
+public class WebViewLoginActivity extends BaseActivity {
 
     private Session session;
     private WebView webView;

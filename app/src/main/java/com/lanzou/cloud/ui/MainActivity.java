@@ -1,6 +1,5 @@
 package com.lanzou.cloud.ui;
 
-import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.ProgressDialog;
 import android.content.Intent;
@@ -9,6 +8,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.Handler;
 import android.provider.OpenableColumns;
 import android.widget.Button;
 import android.widget.EditText;
@@ -31,7 +31,7 @@ import java.util.List;
 import java.util.Stack;
 
 /** 主界面：文件浏览、上传、下载、分享链接下载、新建文件夹 */
-public class MainActivity extends Activity {
+public class MainActivity extends BaseActivity {
 
     private static final int REQ_UPLOAD = 1001;
 
@@ -46,6 +46,15 @@ public class MainActivity extends Activity {
     private long currentFolderId = -1;
     private final Stack<Long> idStack = new Stack<>();
     private final Stack<String> nameStack = new Stack<>();
+    private boolean ready;
+
+    private final Handler handler = new Handler();
+    private final Runnable clipCheck = new Runnable() {
+        @Override
+        public void run() {
+            checkClipboard(false);
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -74,6 +83,11 @@ public class MainActivity extends Activity {
         uploadBtn.setOnClickListener(v -> pickAndUpload());
         mkdirBtn.setOnClickListener(v -> mkdir());
         linkBtn.setOnClickListener(v -> downloadByLink());
+        // 长按「链接下载」直接读剪贴板，方便只复制了链接的场景
+        linkBtn.setOnLongClickListener(v -> {
+            checkClipboard(true);
+            return true;
+        });
         refreshBtn.setOnClickListener(v -> loadDir(currentFolderId));
 
         fileList.setOnItemClickListener((parent, view, position, id) -> {
@@ -92,6 +106,7 @@ public class MainActivity extends Activity {
 
     /** 启动时若自定义目录需要存储权限，主动弹窗请求一次 */
     private void ensureStoragePermissionIfNeeded() {
+        if (prefs.getDownloadTree() != null) return;
         String custom = prefs.getDownloadDir();
         if (custom == null || custom.trim().isEmpty()) return;
         if (!PermissionHelper.needsStorage(this)) return;
@@ -101,6 +116,21 @@ public class MainActivity extends Activity {
                 .setPositiveButton("去授权", (d, w) -> PermissionHelper.requestStorage(this))
                 .setNegativeButton("暂不", null)
                 .show();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (ready && prefs.isClipboardAuto()) {
+            // 稍等一下，等窗口拿到焦点（Android 10+ 只有前台才能读剪贴板）
+            handler.postDelayed(clipCheck, 600);
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        handler.removeCallbacks(clipCheck);
     }
 
     @Override
@@ -125,7 +155,8 @@ public class MainActivity extends Activity {
                 client.login(session.getCookie());
                 runOnUiThread(() -> {
                     pd.dismiss();
-                    loadDir(-1);
+                    ready = true;
+                    loadDir(-1, true);
                 });
             } catch (Exception e) {
                 runOnUiThread(() -> {
@@ -140,6 +171,10 @@ public class MainActivity extends Activity {
     }
 
     private void loadDir(final long folderId) {
+        loadDir(folderId, false);
+    }
+
+    private void loadDir(final long folderId, final boolean afterLogin) {
         final ProgressDialog pd = ProgressDialog.show(this, "加载", "正在加载目录...", true, false);
         new Thread(() -> {
             try {
@@ -151,11 +186,17 @@ public class MainActivity extends Activity {
                     pd.dismiss();
                     adapter = new FileListAdapter(MainActivity.this, list);
                     fileList.setAdapter(adapter);
+                    if (afterLogin) {
+                        maybeAskClipboard();
+                        // 已开启自动拾取的，登录成功后也检查一次（onResume 时还没 ready）
+                        if (prefs.isClipboardAuto()) handler.postDelayed(clipCheck, 800);
+                    }
                 });
             } catch (Exception e) {
                 runOnUiThread(() -> {
                     pd.dismiss();
                     toast(e.getMessage());
+                    if (afterLogin && prefs.isClipboardAuto()) handler.postDelayed(clipCheck, 800);
                 });
             }
         }).start();
@@ -241,15 +282,15 @@ public class MainActivity extends Activity {
                 name = LanzouClient.localName(new File(name).getName());
                 if (name.isEmpty()) name = "file_" + fid;
 
-                File dir = resolveDownloadDir();
-                File outFile = targetFile(dir, name);
+                final DownloadHelper.Dest dest = DownloadHelper.resolveDest(MainActivity.this, prefs, name);
                 final String shownName = name;
                 final String referer = s.url;
                 final String pwd = s.pwd;
                 final String durl = info.durl;
+                HistoryStore.get(MainActivity.this).add(referer, pwd, shownName, HistoryStore.TYPE_FILE);
                 runOnUiThread(() -> {
                     pd.dismiss();
-                    DownloadCenter.get(MainActivity.this).enqueue(shownName, durl, referer, pwd, outFile);
+                    DownloadCenter.get(MainActivity.this).enqueue(shownName, durl, referer, pwd, dest);
                     toast("已加入下载队列：" + shownName);
                 });
             } catch (Exception e) {
@@ -271,6 +312,8 @@ public class MainActivity extends Activity {
                 runOnUiThread(() -> {
                     pd.dismiss();
                     CopyUtil.copy(MainActivity.this, text);
+                    // 自己复制的链接不再触发「发现分享链接」弹窗
+                    prefs.setLastClipboard(text);
                     toast("已复制到剪贴板\n" + text);
                 });
             } catch (Exception e) {
@@ -393,6 +436,14 @@ public class MainActivity extends Activity {
         linkInput.setHint("分享链接：/iXXXX 文件、/bXXXX 文件夹");
         final EditText pwdInput = new EditText(this);
         pwdInput.setHint("提取码（无则留空）");
+
+        // 剪贴板里已有链接时直接预填，省一次粘贴
+        ShareLinks.Link clip = ShareLinks.parse(CopyUtil.read(this));
+        if (clip != null) {
+            linkInput.setText(clip.url);
+            if (clip.pwd != null && !clip.pwd.isEmpty()) pwdInput.setText(clip.pwd);
+        }
+
         ll.addView(linkInput);
         ll.addView(pwdInput);
 
@@ -411,6 +462,8 @@ public class MainActivity extends Activity {
                     }
                     downloadByUrl(url, pwd);
                 })
+                .setNeutralButton("历史记录", (dialog, which) ->
+                        startActivity(new Intent(MainActivity.this, HistoryActivity.class)))
                 .setNegativeButton("取消", null)
                 .show();
     }
@@ -418,6 +471,7 @@ public class MainActivity extends Activity {
     private void downloadByUrl(final String url, final String pwd) {
         // 文件夹分享：进入列表浏览，而不是直接下载
         if (LanzouClient.isFolderShareUrl(url)) {
+            HistoryStore.get(this).add(url, pwd, null, HistoryStore.TYPE_FOLDER);
             Intent i = new Intent(this, ShareBrowseActivity.class);
             i.putExtra(ShareBrowseActivity.EXTRA_URL, url);
             i.putExtra(ShareBrowseActivity.EXTRA_PWD, pwd);
@@ -443,13 +497,13 @@ public class MainActivity extends Activity {
                 name = LanzouClient.localName(new File(name).getName());
                 if (name.isEmpty()) name = "download.bin";
 
-                File dir = resolveDownloadDir();
-                File outFile = targetFile(dir, name);
+                final DownloadHelper.Dest dest = DownloadHelper.resolveDest(MainActivity.this, prefs, name);
                 final String shownName = name;
                 final String durl = info.durl;
+                HistoryStore.get(MainActivity.this).add(url, pwd, shownName, HistoryStore.TYPE_FILE);
                 runOnUiThread(() -> {
                     pd.dismiss();
-                    DownloadCenter.get(MainActivity.this).enqueue(shownName, durl, url, pwd, outFile);
+                    DownloadCenter.get(MainActivity.this).enqueue(shownName, durl, url, pwd, dest);
                     toast(nameKnown ? ("已加入下载队列：" + shownName)
                             : "已加入下载队列，文件名将在连接后自动识别");
                 });
@@ -538,26 +592,74 @@ public class MainActivity extends Activity {
      * 返回 false 表示本次下载已取消（等待授权）。
      */
     private boolean ensureStorageOk() {
-        String custom = prefs.getDownloadDir();
-        if (custom == null || custom.trim().isEmpty()) return true;
-        if (!PermissionHelper.needsStorage(this)) return true;
+        return DownloadHelper.ensureStorage(this, prefs);
+    }
+
+    // ================================================================ 剪贴板拾取
+
+    /** 首次进入主界面时说明一次「剪贴板自动拾取」（系统并没有对应的权限可申请） */
+    private void maybeAskClipboard() {
+        if (prefs.isClipboardAsked()) return;
+        prefs.setClipboardAsked(true);
         new AlertDialog.Builder(this)
-                .setTitle("需要存储权限")
-                .setMessage("自定义下载目录位于公共存储，需要「存储」权限才能写入。\n\n去授权，或到设置中改回默认目录（无需权限）。")
-                .setPositiveButton("去授权", (d, w) -> PermissionHelper.requestStorage(this))
-                .setNegativeButton("取消下载", null)
+                .setTitle("剪贴板自动拾取")
+                .setMessage("开启后，每次回到 App 时会读取一次剪贴板，"
+                        + "识别其中的蓝奏云分享链接并提示打开。\n\n"
+                        + "· 只在本机识别，不会上传任何内容\n"
+                        + "· 系统没有「剪贴板权限」可申请，Android 10+ 只有 App 在前台时才能读取\n"
+                        + "· Android 12+ 读取时系统会提示「已粘贴」，属正常现象\n\n"
+                        + "随时可以在设置里关闭。")
+                .setPositiveButton("开启", (d, w) -> {
+                    prefs.setClipboardAuto(true);
+                    handler.postDelayed(clipCheck, 300);
+                })
+                .setNegativeButton("暂不", (d, w) -> prefs.setClipboardAuto(false))
                 .show();
-        return false;
     }
 
-    /** 解析下载目录：优先自定义路径（需权限/系统支持），否则应用专属目录 */
-    private File resolveDownloadDir() {
-        return DownloadHelper.resolveDir(this, prefs);
+    /** 读取剪贴板并提示；manual=true 表示用户主动触发，读不到时会给出提示 */
+    private void checkClipboard(boolean manual) {
+        String text = CopyUtil.read(this);
+        if (text == null || text.trim().isEmpty()) {
+            if (manual) toast("剪贴板是空的");
+            return;
+        }
+        if (text.equals(prefs.getLastClipboard())) {
+            if (manual) toast("这段内容已经处理过了");
+            return;
+        }
+        final ShareLinks.Link link = ShareLinks.parse(text);
+        if (link == null) {
+            if (manual) toast("剪贴板里没有识别到蓝奏云分享链接");
+            return;
+        }
+        prefs.setLastClipboard(text);
+        showClipboardDialog(link);
     }
 
-    /** 根据「重名覆盖」设置决定目标文件 */
-    private File targetFile(File dir, String name) {
-        return DownloadHelper.targetFile(prefs, dir, name);
+    private void showClipboardDialog(final ShareLinks.Link link) {
+        String msg = (link.folder ? "文件夹分享" : "文件分享") + "\n" + link.url
+                + (link.pwd == null || link.pwd.isEmpty() ? "" : "\n提取码：" + link.pwd);
+        new AlertDialog.Builder(this)
+                .setTitle("发现分享链接")
+                .setMessage(msg)
+                .setPositiveButton(link.folder ? "浏览" : "下载", (d, w) -> {
+                    if (link.folder) {
+                        HistoryStore.get(this).add(link.url, link.pwd, null, HistoryStore.TYPE_FOLDER);
+                        Intent i = new Intent(this, ShareBrowseActivity.class);
+                        i.putExtra(ShareBrowseActivity.EXTRA_URL, link.url);
+                        i.putExtra(ShareBrowseActivity.EXTRA_PWD, link.pwd == null ? "" : link.pwd);
+                        startActivity(i);
+                    } else {
+                        downloadByUrl(link.url, link.pwd == null ? "" : link.pwd);
+                    }
+                })
+                .setNeutralButton("复制链接", (d, w) -> {
+                    CopyUtil.copy(this, link.url + (link.pwd == null ? "" : " 提取码：" + link.pwd));
+                    toast("已复制链接");
+                })
+                .setNegativeButton("忽略", null)
+                .show();
     }
 
     private void toast(String msg) {

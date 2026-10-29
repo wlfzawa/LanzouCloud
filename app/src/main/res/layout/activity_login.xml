@@ -59,6 +59,13 @@
             android:layout_marginTop="12dp"
             android:text="Cookie 登录" />
 
+        <Button
+            android:id="@+id/import_cookie_btn"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="从文件导入 Cookie（json / txt）" />
+
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"

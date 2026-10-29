@@ -1,11 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- 品牌色：亮/暗两套保持一致，暗色下顶栏压深一点 -->
     <color name="primary">#1565C0</color>
     <color name="primary_dark">#0D47A1</color>
     <color name="accent">#FF6D00</color>
+
+    <!-- 页面底色 / 卡片、列表底色 -->
     <color name="bg">#F5F6FA</color>
+    <color name="surface">#FFFFFF</color>
+
+    <!-- 文字 -->
     <color name="text_primary">#1A1A1A</color>
     <color name="text_secondary">#8A8F99</color>
+
     <color name="divider">#E5E7EB</color>
+
+    <!-- 顶栏之上的文字/图标：永远白色，不随主题变化 -->
+    <color name="on_primary">#FFFFFF</color>
+
+    <!-- 兼容旧引用：语义等同 surface -->
     <color name="white">#FFFFFF</color>
 </resources>

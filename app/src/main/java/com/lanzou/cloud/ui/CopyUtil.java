@@ -9,6 +9,9 @@ import android.os.Build;
  * 剪贴板工具，兼容 Android 2.3 (API 9)：
  * API 11+ 用 android.content.ClipboardManager；
  * API 9/10 用旧的 android.text.ClipboardManager。
+ *
+ * 说明：读取剪贴板不需要（也没有）运行时权限，Android 10+ 只允许应用在前台时读取，
+ * Android 12+ 读取时系统会弹一次「已粘贴」提示，这是系统行为，无法关闭。
  */
 public final class CopyUtil {
 
@@ -28,6 +31,31 @@ public final class CopyUtil {
             if (cm != null) {
                 cm.setText(text);
             }
+        }
+    }
+
+    /** 读取剪贴板纯文本；没有内容或不可读时返回 null */
+    @SuppressWarnings("deprecation")
+    public static String read(Context ctx) {
+        try {
+            if (Build.VERSION.SDK_INT >= 11) {
+                ClipboardManager cm = (ClipboardManager)
+                        ctx.getSystemService(Context.CLIPBOARD_SERVICE);
+                if (cm == null || !cm.hasPrimaryClip()) return null;
+                ClipData clip = cm.getPrimaryClip();
+                if (clip == null || clip.getItemCount() == 0) return null;
+                CharSequence cs = clip.getItemAt(0).coerceToText(ctx);
+                return cs == null ? null : cs.toString();
+            } else {
+                android.text.ClipboardManager cm = (android.text.ClipboardManager)
+                        ctx.getSystemService(Context.CLIPBOARD_SERVICE);
+                if (cm == null || !cm.hasText()) return null;
+                CharSequence cs = cm.getText();
+                return cs == null ? null : cs.toString();
+            }
+        } catch (Throwable t) {
+            // 部分 ROM 在后台读剪贴板会抛 SecurityException，静默忽略
+            return null;
         }
     }
 }
