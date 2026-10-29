@@ -126,9 +126,10 @@ public final class CookieImportFlow {
                 new AlertDialog.Builder(a)
                         .setTitle("导入完成")
                         .setMessage(sb.toString())
-                        .setPositiveButton("知道了", null)
+                        .setPositiveButton("知道了", (d, w) -> {
+                            if (onDone != null) onDone.run();
+                        })
                         .show();
-                if (onDone != null) onDone.run();
             });
         }).start();
     }

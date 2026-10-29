@@ -18,6 +18,7 @@ public class AppPrefs {
     private static final String KEY_CLIPBOARD_AUTO = "clipboard_auto";
     private static final String KEY_CLIPBOARD_ASKED = "clipboard_asked";
     private static final String KEY_CLIPBOARD_LAST = "clipboard_last";
+    private static final String KEY_CLIPBOARD_LAST_TIME = "clipboard_last_time";
 
     private static AppPrefs instance;
 
@@ -131,6 +132,19 @@ public class AppPrefs {
     }
 
     public void setLastClipboard(String text) {
-        prefs.edit().putString(KEY_CLIPBOARD_LAST, text == null ? "" : text).apply();
+        prefs.edit()
+                .putString(KEY_CLIPBOARD_LAST, text == null ? "" : text)
+                .putLong(KEY_CLIPBOARD_LAST_TIME, System.currentTimeMillis())
+                .apply();
+    }
+
+    /**
+     * 是否是刚处理过的同一段内容（1 分钟内）。
+     * 用时间窗而不是永久去重：用户过一会儿重新复制同一个链接时还能再弹一次。
+     */
+    public boolean isRecentClipboard(String text) {
+        if (text == null || !text.equals(getLastClipboard())) return false;
+        long t = prefs.getLong(KEY_CLIPBOARD_LAST_TIME, 0);
+        return t > 0 && System.currentTimeMillis() - t < 60_000L;
     }
 }

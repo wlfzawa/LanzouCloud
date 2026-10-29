@@ -624,8 +624,8 @@ public class MainActivity extends BaseActivity {
             if (manual) toast("剪贴板是空的");
             return;
         }
-        if (text.equals(prefs.getLastClipboard())) {
-            if (manual) toast("这段内容已经处理过了");
+        if (prefs.isRecentClipboard(text)) {
+            if (manual) toast("这段内容刚刚已经处理过了");
             return;
         }
         final ShareLinks.Link link = ShareLinks.parse(text);
