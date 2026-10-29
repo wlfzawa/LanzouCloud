@@ -126,7 +126,8 @@ export ANDROID_HOME=/opt/android-sdk
 
 - 每次代码更新都会同步到 GitHub 与 Gitee，直接执行 `tools/sync.sh` 即可
 - **Gitee 为主源**：脚本先推 Gitee（国内可达），再尽力推 GitHub
-- GitHub 推不上去也没关系：Actions 每 20 分钟把 Gitee 领先的提交快进到 GitHub，
+- GitHub 走两条通道：优先 SSH（`ssh.github.com:443`，国内一般可用），失败再走 HTTPS；
+  两条都不通也没关系 —— Actions 每 20 分钟把 Gitee 领先的提交快进到 GitHub，
   推送结束后脚本还会主动触发一次，通常几十秒内同步完成
 - 若 GitHub 反而领先（例如网页上直接改过文件），工作流会用 `GITEE_TOKEN` 反向快进到 Gitee；
   两边分叉时只报错、不覆盖，需要人工合并
