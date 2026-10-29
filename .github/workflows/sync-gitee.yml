@@ -56,6 +56,8 @@ jobs:
 
           cd work.git
           git remote add github "$GH_URL"
+          # origin 是 --mirror 克隆来的，禁止带 refspec 推送，反向同步另建 remote
+          [ -n "${GITEE_TOKEN:-}" ] && git remote add gitee "$GITEE_URL"
           echo "== 拉取 GitHub 引用"
           if ! git fetch --prune github '+refs/heads/*:refs/remotes/github/*'; then
             echo "::error::无法读取 GitHub 仓库"
@@ -87,7 +89,7 @@ jobs:
               echo "::error::GitHub 领先但未配置 GITEE_TOKEN，无法反向同步"
               exit 1
             fi
-            git push origin "refs/remotes/github/$BRANCH:refs/heads/$BRANCH" || exit 1
+            git push gitee "refs/remotes/github/$BRANCH:refs/heads/$BRANCH" || exit 1
           else
             echo "::error::两个仓库的 $BRANCH 已经分叉，需要人工合并不再自动覆盖"
             echo "以下为两边不同的提交（左=Gitee，右=GitHub）："
