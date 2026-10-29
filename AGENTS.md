@@ -10,6 +10,10 @@
   ```
 - **GitHub 推送失败不算问题**：`.github/workflows/sync-gitee.yml` 每 20 分钟把 Gitee 领先的
   提交快进到 GitHub，`tools/sync.sh` 推完也会 `workflow_dispatch` 触发一次
+- GitHub 有两条通道：优先 SSH remote `github-ssh`（走 `ssh.github.com:443`，实测 4 秒完成，
+  而 HTTPS 443 会 135 秒超时），失败再退回 HTTPS。SSH 私钥在 `~/.ssh/id_ed25519_github`，
+  公钥已加到 GitHub 账号；机器重建后 key 丢失会自动退回 HTTPS，或重新生成再用
+  `POST /user/keys` 注册
 - **Gitee 推送失败才算失败**：代码没落到任何远端，必须重试
 - 工作流是双向的但**不覆盖分叉**：GitHub 领先时反向快进 Gitee（用 `GITEE_TOKEN`），
   两边分叉时报错退出，需人工合并后再同步

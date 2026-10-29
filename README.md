@@ -131,4 +131,5 @@ export ANDROID_HOME=/opt/android-sdk
   推送结束后脚本还会主动触发一次，通常几十秒内同步完成
 - 若 GitHub 反而领先（例如网页上直接改过文件），工作流会用 `GITEE_TOKEN` 反向快进到 Gitee；
   两边分叉时只报错、不覆盖，需要人工合并
+- 定时任务由 GitHub Actions 提供：仓库连续 60 天无提交会被平台暂停，推一次代码即恢复
 - **只有明确要求时才发 Release**，否则只推代码（`tools/publish.py --release`）
