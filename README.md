@@ -29,7 +29,7 @@
 |---|---|
 | GitHub Releases | https://github.com/wlfzawa/LanzouCloud/releases |
 | Gitee Releases | https://gitee.com/wlfzawa/LanzouCloud/releases |
-| 蓝奏云 | https://wwbkc.lanzn.com/igLfk4dwtowf 提取码 `e5po` |
+| 蓝奏云 | https://wwbkc.lanzn.com/i1U2J4e1cqeh 提取码 `83yv` |
 
 同一版本用同一证书签名，可直接覆盖安装。
 
