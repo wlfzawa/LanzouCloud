@@ -4,6 +4,8 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.net.Uri;
 
+import java.security.MessageDigest;
+
 /** 应用设置：下载位置、下载逻辑、外观主题、剪贴板拾取 */
 public class AppPrefs {
 
@@ -17,7 +19,10 @@ public class AppPrefs {
     private static final String KEY_THEME_MODE = "theme_mode";
     private static final String KEY_CLIPBOARD_AUTO = "clipboard_auto";
     private static final String KEY_CLIPBOARD_ASKED = "clipboard_asked";
+    /** 旧版本存过剪贴板原文，仅用于升级时清理 */
     private static final String KEY_CLIPBOARD_LAST = "clipboard_last";
+    /** 现在只存内容指纹（SHA-256 前 16 字节），无法还原原文 */
+    private static final String KEY_CLIPBOARD_HASH = "clipboard_hash";
     private static final String KEY_CLIPBOARD_LAST_TIME = "clipboard_last_time";
 
     private static AppPrefs instance;
@@ -34,6 +39,10 @@ public class AppPrefs {
 
     private AppPrefs(Context app) {
         prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        // 升级清理：旧版本把剪贴板原文写在这里，可能包含聊天记录，启动时删掉
+        if (prefs.contains(KEY_CLIPBOARD_LAST)) {
+            prefs.edit().remove(KEY_CLIPBOARD_LAST).apply();
+        }
     }
 
     // ================================================================ 下载位置
@@ -126,14 +135,13 @@ public class AppPrefs {
         prefs.edit().putBoolean(KEY_CLIPBOARD_ASKED, v).apply();
     }
 
-    /** 上次处理过的剪贴板内容，避免同一段文字反复弹窗 */
-    public String getLastClipboard() {
-        return prefs.getString(KEY_CLIPBOARD_LAST, "");
-    }
-
+    /**
+     * 上次处理过的剪贴板内容，避免同一段文字反复弹窗。
+     * 只存摘要不存原文：剪贴板里很可能是聊天记录，不应该落到应用配置里。
+     */
     public void setLastClipboard(String text) {
         prefs.edit()
-                .putString(KEY_CLIPBOARD_LAST, text == null ? "" : text)
+                .putString(KEY_CLIPBOARD_HASH, fingerprint(text))
                 .putLong(KEY_CLIPBOARD_LAST_TIME, System.currentTimeMillis())
                 .apply();
     }
@@ -143,8 +151,29 @@ public class AppPrefs {
      * 用时间窗而不是永久去重：用户过一会儿重新复制同一个链接时还能再弹一次。
      */
     public boolean isRecentClipboard(String text) {
-        if (text == null || !text.equals(getLastClipboard())) return false;
+        if (text == null) return false;
+        String saved = prefs.getString(KEY_CLIPBOARD_HASH, "");
+        if (saved.isEmpty() || !saved.equals(fingerprint(text))) return false;
         long t = prefs.getLong(KEY_CLIPBOARD_LAST_TIME, 0);
         return t > 0 && System.currentTimeMillis() - t < 60_000L;
+    }
+
+    /** 内容指纹：SHA-256 前 16 字节，单向不可还原 */
+    static String fingerprint(String text) {
+        if (text == null) return "";
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] d = md.digest(text.getBytes("UTF-8"));
+            final char[] hex = "0123456789abcdef".toCharArray();
+            char[] out = new char[32];
+            for (int i = 0; i < 16; i++) {
+                int b = d[i] & 0xff;
+                out[i * 2] = hex[b >>> 4];
+                out[i * 2 + 1] = hex[b & 0x0f];
+            }
+            return new String(out);
+        } catch (Exception e) {
+            return "";
+        }
     }
 }
