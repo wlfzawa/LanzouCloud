@@ -100,8 +100,8 @@ final class DownloadHelper {
         if (!PermissionHelper.needsStorage(a)) return true;
         new AlertDialog.Builder(a)
                 .setTitle("需要存储权限")
-                .setMessage("自定义下载目录位于公共存储，需要「存储」权限才能写入。\n\n"
-                        + "去授权，或在设置里用「选择文件夹」授权一个目录（推荐，无需权限）。")
+                .setMessage("下载目录位于公共存储，写入需要「存储」权限。\n\n"
+                        + "去授权，或在设置里用「选择文件夹」指定一个目录。")
                 .setPositiveButton("去授权", (d, w) -> PermissionHelper.requestStorage(a))
                 .setNegativeButton("取消下载", null)
                 .show();

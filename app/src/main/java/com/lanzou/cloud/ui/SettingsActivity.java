@@ -97,7 +97,7 @@ public class SettingsActivity extends BaseActivity {
         TextView textVersion = findViewById(R.id.text_version);
         try {
             String vn = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
-            textVersion.setText("版本 " + vn + "\n系统 API " + Build.VERSION.SDK_INT + " · minSdk 9");
+            textVersion.setText("版本 " + vn);
         } catch (Exception e) {
             textVersion.setText("版本信息不可用");
         }
@@ -246,7 +246,7 @@ public class SettingsActivity extends BaseActivity {
     private void changeDir() {
         final String[] options = {
                 "使用默认目录（应用专属）",
-                SafUtil.isSupported() ? "选择文件夹（系统选择器）" : "浏览并选择文件夹",
+                SafUtil.isSupported() ? "选择文件夹" : "浏览并选择文件夹",
                 "输入路径（高级）"
         };
         new AlertDialog.Builder(this)
@@ -279,7 +279,7 @@ public class SettingsActivity extends BaseActivity {
         try {
             startActivityForResult(i, REQ_TREE);
         } catch (Exception e) {
-            toast("系统没有文件选择器，改用内置浏览：" + e.getMessage());
+            toast("已改用内置目录浏览");
             browseDir(Environment.getExternalStorageDirectory());
         }
     }
@@ -304,8 +304,8 @@ public class SettingsActivity extends BaseActivity {
             new AlertDialog.Builder(this)
                     .setTitle("文件夹可能不可写")
                     .setMessage("已保存这个文件夹，但试写文件失败。可能原因：\n"
-                            + "· 该目录只读（如部分系统目录）\n"
-                            + "· 授权被系统回收\n\n下载时若失败，请换一个文件夹（推荐「Download」）。")
+                            + "· 该目录只读\n"
+                            + "· 文件夹授权已失效\n\n下载时若失败，请换一个文件夹（推荐「Download」）。")
                     .setPositiveButton("知道了", null)
                     .show();
         }
@@ -367,8 +367,7 @@ public class SettingsActivity extends BaseActivity {
         }
         new AlertDialog.Builder(this)
                 .setTitle("自定义下载目录")
-                .setMessage("输入可写的绝对路径。\nAndroid 11+ 受分区存储限制，公共目录写不进去，"
-                        + "建议改用上面的「选择文件夹」。")
+                .setMessage("输入可用的绝对路径。\n若下载失败，建议改用上面的「选择文件夹」。")
                 .setView(input)
                 .setPositiveButton("保存", (dialog, which) -> {
                     String p = input.getText().toString().trim();
@@ -381,7 +380,7 @@ public class SettingsActivity extends BaseActivity {
                         // Android 6~12L：写公共目录需要运行时存储权限
                         new AlertDialog.Builder(this)
                                 .setTitle("需要存储权限")
-                                .setMessage("自定义目录位于公共存储，Android 6.0+ 需要「存储」权限才能写入。现在去授权？\n\n拒绝授权的话，下载会自动改用默认目录。")
+                                .setMessage("该目录位于公共存储，写入需要「存储」权限。现在去授权？\n\n拒绝的话，下载会自动改用默认目录。")
                                 .setPositiveButton("去授权", (d2, w2) ->
                                         PermissionHelper.requestStorage(SettingsActivity.this))
                                 .setNegativeButton("暂不", (d2, w2) ->

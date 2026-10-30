@@ -10,8 +10,8 @@ import android.os.Build;
  * API 11+ 用 android.content.ClipboardManager；
  * API 9/10 用旧的 android.text.ClipboardManager。
  *
- * 说明：读取剪贴板不需要（也没有）运行时权限，Android 10+ 只允许应用在前台时读取，
- * Android 12+ 读取时系统会弹一次「已粘贴」提示，这是系统行为，无法关闭。
+ * 说明：读取剪贴板无需运行时权限；Android 10+ 仅应用在前台时可读，
+ * Android 12+ 读取时会显示一次系统提示。
  */
 public final class CopyUtil {
 

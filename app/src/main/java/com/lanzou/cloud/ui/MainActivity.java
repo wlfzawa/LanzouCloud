@@ -112,7 +112,7 @@ public class MainActivity extends BaseActivity {
         if (!PermissionHelper.needsStorage(this)) return;
         new AlertDialog.Builder(this)
                 .setTitle("需要存储权限")
-                .setMessage("自定义下载目录位于公共存储，需要「存储」权限才能写入。现在去授权？\n\n拒绝后下载会自动改用默认目录。")
+                .setMessage("下载目录位于公共存储，写入需要「存储」权限。现在去授权？\n\n拒绝后下载会自动改用默认目录。")
                 .setPositiveButton("去授权", (d, w) -> PermissionHelper.requestStorage(this))
                 .setNegativeButton("暂不", null)
                 .show();
@@ -608,18 +608,15 @@ public class MainActivity extends BaseActivity {
 
     // ================================================================ 剪贴板拾取
 
-    /** 首次进入主界面时说明一次「剪贴板自动拾取」（系统并没有对应的权限可申请） */
+    /** 首次进入主界面时询问一次是否开启剪贴板自动拾取 */
     private void maybeAskClipboard() {
         if (prefs.isClipboardAsked()) return;
         prefs.setClipboardAsked(true);
         new AlertDialog.Builder(this)
                 .setTitle("剪贴板自动拾取")
-                .setMessage("开启后，每次回到 App 时会读取一次剪贴板，"
-                        + "识别其中的蓝奏云分享链接并提示打开。\n\n"
+                .setMessage("开启后，回到 App 时会读取剪贴板中的蓝奏云分享链接，并提示是否打开。\n\n"
                         + "· 只在本机识别，不会上传任何内容\n"
-                        + "· 系统没有「剪贴板权限」可申请，Android 10+ 只有 App 在前台时才能读取\n"
-                        + "· Android 12+ 读取时系统会提示「已粘贴」，属正常现象\n\n"
-                        + "随时可以在设置里关闭。")
+                        + "· 随时可以在设置里关闭")
                 .setPositiveButton("开启", (d, w) -> {
                     prefs.setClipboardAuto(true);
                     handler.postDelayed(clipCheck, 300);
