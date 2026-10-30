@@ -26,7 +26,7 @@ public final class SafUtil {
 
     /** 在 tree 目录下创建文件，返回文档 URI */
     public static Uri createFile(Context c, Uri tree, String name) throws IOException {
-        if (!isSupported()) throw new IOException("当前系统不支持文件夹授权");
+        if (!isSupported()) throw new IOException("此设备不支持文件夹授权");
         return SafUtil21.createFile(c, tree, name);
     }
 

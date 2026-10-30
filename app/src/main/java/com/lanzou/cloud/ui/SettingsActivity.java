@@ -401,7 +401,7 @@ public class SettingsActivity extends BaseActivity {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode != PermissionHelper.REQ_STORAGE) return;
         if (PermissionHelper.isGranted(grantResults)) {
-            toast("存储权限已授予，自定义下载目录可正常写入");
+            toast("存储权限已授予，可以写入该目录");
         } else if (!PermissionHelper.canAskAgain(this)) {
             toast("已拒绝且不再询问：公共目录无法写入。请改用默认目录，或到系统设置里手动开启存储权限");
         } else {
