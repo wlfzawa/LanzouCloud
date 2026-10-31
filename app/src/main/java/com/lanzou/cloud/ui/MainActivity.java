@@ -607,7 +607,11 @@ public class MainActivity extends BaseActivity {
                 runOnUiThread(() -> {
                     pd.dismiss();
                     String msg = e.getMessage() == null ? "分卷上传失败" : e.getMessage();
-                    if (uploadCancelled) msg = "已取消上传";
+                    if (uploadCancelled) {
+                        msg = "已取消上传，已经传完的分卷会保留在网盘";
+                    } else if (!msg.contains("已取消")) {
+                        msg = msg + "\n\n已经传完的分卷会保留在网盘，可删除后重试。";
+                    }
                     toast(msg);
                     // 取消/失败时已经传上去的卷仍在云端，刷新一下让用户看到
                     if (!uploadCancelled) loadDir(currentFolderId);
