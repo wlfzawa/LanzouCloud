@@ -8,6 +8,10 @@ import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import com.lanzou.cloud.core.LanzouClient;
 import com.lanzou.cloud.core.LanzouException;
+import com.lanzou.cloud.core.Models;
+import com.lanzou.cloud.core.ProgressListener;
+import com.lanzou.cloud.core.VolumeDownloader;
+import com.lanzou.cloud.core.VolumeManifest;
 import com.lanzou.cloud.core.SafUtil;
 
 import java.io.File;
@@ -41,7 +45,7 @@ public class DownloadCenter {
         public final int id;
         /** 展示名，下载中可能被服务端 Content-Disposition 里的真名替换 */
         public volatile String name;
-        public final String durl;
+        public volatile String durl;
         public final String referer;
         public final String pwd;
         /** File 模式下的落盘文件，改名后会指向新文件 */
@@ -60,6 +64,16 @@ public class DownloadCenter {
         public volatile long time = System.currentTimeMillis();
         /** 是否是从磁盘恢复的历史记录（链接已失效，不能重试） */
         public volatile boolean historical;
+        /** 本次是否走分片下载 */
+        public volatile boolean chunked;
+        /** 分片线程数（1 表示单流） */
+        public volatile int threads = 1;
+        /** 重试前是否需要刷新已过期的直链 */
+        public volatile boolean refresh;
+        /** 分卷合并任务：清单（为空表示普通单文件下载） */
+        public volatile VolumeManifest volume;
+        /** 分卷的直链解析入口 */
+        public volatile VolumeDownloader.Source volumeSource;
 
         Task(int id, String name, String durl, String referer, String pwd) {
             this.id = id;
@@ -105,6 +119,7 @@ public class DownloadCenter {
 
     private final Context app;
     private final LanzouClient client;
+    private final AppPrefs prefs;
     private final List<Task> tasks = new ArrayList<Task>();
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final AtomicInteger seq = new AtomicInteger(1);
@@ -116,6 +131,7 @@ public class DownloadCenter {
     private DownloadCenter(Context app) {
         this.app = app;
         this.client = Session.get(app).getClient();
+        this.prefs = AppPrefs.get(app);
         this.historyFile = new File(app.getFilesDir(), "download_history.json");
         restore();
     }
@@ -137,14 +153,31 @@ public class DownloadCenter {
     public boolean retry(Task t) {
         if (t == null || t.historical) return false;
         if (t.status == DOWNLOADING || t.status == WAITING) return false;
-        if (t.durl == null || t.durl.isEmpty()) return false;
+        if (t.volume == null && (t.durl == null || t.durl.isEmpty())) return false;
         t.status = WAITING;
         t.error = null;
-        t.now = 0;
-        t.total = 0;
+        t.refresh = true;
         persist();
         executor.execute(() -> run(t));
         return true;
+    }
+
+    /** 分卷合并下载：清单已在手，逐卷解析直链后顺序写入同一个文件 */
+    public Task enqueueVolume(String name, VolumeManifest manifest,
+                              VolumeDownloader.Source source, DownloadHelper.Dest dest) {
+        Task t = new Task(seq.getAndIncrement(), name, "", "", "");
+        t.target = dest.file;
+        t.tree = dest.tree;
+        t.dirLabel = dest.label;
+        t.volume = manifest;
+        t.volumeSource = source;
+        t.total = manifest.size;
+        synchronized (tasks) {
+            tasks.add(0, t);
+        }
+        persist();
+        executor.execute(() -> run(t));
+        return t;
     }
 
     public List<Task> list() {
@@ -179,27 +212,70 @@ public class DownloadCenter {
     private void run(Task t) {
         t.status = DOWNLOADING;
         t.error = null;
-        t.now = 0;
         t.total = 0;
+
+        // 重试时直链可能已过期，先用分享页重新解析一次
+        if (t.refresh) {
+            t.refresh = false;
+            if (t.referer != null && !t.referer.isEmpty()) {
+                try {
+                    Models.DownloadInfo info = client.directUrl(t.referer, t.pwd);
+                    if (info != null && info.durl != null && !info.durl.isEmpty()) {
+                        t.durl = info.durl;
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+        }
 
         OutputStream os = null;
         Exception err = null;
         try {
-            if (t.target != null) {
+            if (t.volume != null) {
+                if (t.target != null) {
+                    File dir = t.target.getParentFile();
+                    if (dir != null) dir.mkdirs();
+                    os = new FileOutputStream(t.target);
+                } else if (t.tree != null) {
+                    os = openTreeStream(t);
+                } else {
+                    throw new IllegalStateException("没有下载目标");
+                }
+                t.total = t.volume.size;
+                t.now = 0;
+                VolumeDownloader.download(client, t.volume, t.volumeSource, os,
+                        prefs.isVolumeVerify(), (name, total, now) -> {
+                            t.total = total;
+                            t.now = now;
+                        });
+            } else if (t.target != null) {
                 File dir = t.target.getParentFile();
                 if (dir != null) dir.mkdirs();
-                os = new FileOutputStream(t.target);
+                t.threads = Math.max(1, prefs.getDownloadThreads());
+                t.chunked = prefs.isChunkedDownload() && t.threads > 1;
+                ProgressListener listener = (name, total, now) -> {
+                    if (name != null && !name.isEmpty() && !name.equals(t.name)) t.name = name;
+                    t.total = total;
+                    t.now = now;
+                };
+                if (t.chunked) {
+                    LanzouClient.RemoteFile rf = client.probe(t.durl, t.referer, t.pwd);
+                    applyRealName(t, rf.name);
+                    client.downloadToFile(t.durl, t.referer, t.pwd, t.target, t.threads, rf, listener);
+                } else {
+                    os = new FileOutputStream(t.target);
+                    client.downloadToStream(t.durl, t.referer, t.pwd, os, t.name, listener);
+                }
             } else if (t.tree != null) {
                 os = openTreeStream(t);
+                client.downloadToStream(t.durl, t.referer, t.pwd, os, t.name, (name, total, now) -> {
+                    if (name != null && !name.equals(t.name)) applyRealName(t, name);
+                    t.total = total;
+                    t.now = now;
+                });
             } else {
                 throw new IllegalStateException("没有下载目标");
             }
-
-            client.downloadToStream(t.durl, t.referer, t.pwd, os, t.name, (name, total, now) -> {
-                if (name != null && !name.equals(t.name)) applyRealName(t, name);
-                t.total = total;
-                t.now = now;
-            });
         } catch (Exception e) {
             err = e;
         } finally {

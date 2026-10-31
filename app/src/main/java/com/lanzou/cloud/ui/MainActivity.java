@@ -21,6 +21,9 @@ import com.lanzou.cloud.R;
 import com.lanzou.cloud.core.LanzouClient;
 import com.lanzou.cloud.core.LanzouException;
 import com.lanzou.cloud.core.Models;
+import com.lanzou.cloud.core.VolumeDownloader;
+import com.lanzou.cloud.core.VolumeManifest;
+import com.lanzou.cloud.core.VolumeUploader;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -47,6 +50,12 @@ public class MainActivity extends BaseActivity {
     private final Stack<Long> idStack = new Stack<>();
     private final Stack<String> nameStack = new Stack<>();
     private boolean ready;
+    /** 当前目录的文件列表，分卷下载时用来按名字找齐所有卷 */
+    private volatile List<Models.FileItem> currentFiles = new ArrayList<>();
+    /** 下次选完文件强制分卷 */
+    private boolean forceVolume;
+    /** 分卷上传是否被用户取消 */
+    private volatile boolean uploadCancelled;
 
     private final Handler handler = new Handler();
     private final Runnable clipCheck = new Runnable() {
@@ -80,7 +89,12 @@ public class MainActivity extends BaseActivity {
                 startActivity(new Intent(MainActivity.this, DownloadsActivity.class)));
         settingsBtn.setOnClickListener(v ->
                 startActivity(new Intent(MainActivity.this, SettingsActivity.class)));
-        uploadBtn.setOnClickListener(v -> pickAndUpload());
+        uploadBtn.setOnClickListener(v -> pickAndUpload(false));
+        // 长按「上传」：选完文件强制分卷（适合想控制单卷大小的场景）
+        uploadBtn.setOnLongClickListener(v -> {
+            pickAndUpload(true);
+            return true;
+        });
         mkdirBtn.setOnClickListener(v -> mkdir());
         linkBtn.setOnClickListener(v -> downloadByLink());
         // 长按「链接下载」直接读剪贴板，方便只复制了链接的场景
@@ -179,6 +193,7 @@ public class MainActivity extends BaseActivity {
         new Thread(() -> {
             try {
                 Models.DirListing d = client.listDir(folderId);
+                currentFiles = d.files == null ? new ArrayList<Models.FileItem>() : d.files;
                 final List<Object> list = new ArrayList<>();
                 list.addAll(d.folders);
                 list.addAll(d.files);
@@ -241,6 +256,18 @@ public class MainActivity extends BaseActivity {
     // ================================================================ 文件操作
 
     private void onFileClick(final Models.FileItem f) {
+        if (VolumeManifest.isManifest(f.name)) {
+            new AlertDialog.Builder(this)
+                    .setTitle(f.name)
+                    .setMessage("这是分卷说明文件。\n\n"
+                            + "「合并下载」会读取说明，下载同目录下的全部分卷，"
+                            + "按顺序拼接成一个文件并校验。")
+                    .setPositiveButton("合并下载", (d, w) -> openVolume(f))
+                    .setNeutralButton("普通下载", (d, w) -> downloadFile(f.id))
+                    .setNegativeButton("取消", null)
+                    .show();
+            return;
+        }
         final String[] options = {"下载", "复制分享链接", "复制下载直链"};
         new AlertDialog.Builder(this)
                 .setTitle(f.name)
@@ -254,6 +281,47 @@ public class MainActivity extends BaseActivity {
                     }
                 })
                 .show();
+    }
+
+    /** 读取清单，确认分卷齐全后整组加入下载队列 */
+    private void openVolume(final Models.FileItem f) {
+        final ProgressDialog pd = ProgressDialog.show(this, "分卷", "正在读取说明文件...", true, false);
+        new Thread(() -> {
+            try {
+                Models.ShareInfo s = client.share(f.id, true);
+                final VolumeManifest m = VolumeFlow.read(client, s.url, s.pwd);
+                final List<Models.FileItem> files = new ArrayList<>(currentFiles);
+                final List<String> miss = VolumeFlow.missing(m, VolumeFlow.namesOfFiles(files));
+                runOnUiThread(() -> {
+                    pd.dismiss();
+                    if (!miss.isEmpty()) {
+                        new AlertDialog.Builder(this)
+                                .setTitle("分卷不完整")
+                                .setMessage("缺少 " + miss.size() + " 个分卷：\n" + preview(miss)
+                                        + "\n\n请确认说明文件与全部分卷在同一个文件夹内。")
+                                .setPositiveButton("知道了", null)
+                                .show();
+                        return;
+                    }
+                    VolumeFlow.start(this, prefs, m, VolumeFlow.fromFiles(client, files), null);
+                });
+            } catch (final Exception e) {
+                runOnUiThread(() -> {
+                    pd.dismiss();
+                    toast(e.getMessage());
+                });
+            }
+        }).start();
+    }
+
+    private static String preview(List<String> list) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < list.size() && i < 5; i++) {
+            if (i > 0) sb.append('\n');
+            sb.append("· ").append(list.get(i));
+        }
+        if (list.size() > 5) sb.append("\n… 共 ").append(list.size()).append(" 个");
+        return sb.toString();
     }
 
     private void downloadFile(final long fid) {
@@ -359,7 +427,8 @@ public class MainActivity extends BaseActivity {
 
     // ================================================================ 上传
 
-    private void pickAndUpload() {
+    private void pickAndUpload(boolean forceVolume) {
+        this.forceVolume = forceVolume;
         Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
         intent.setType("*/*");
         intent.addCategory(Intent.CATEGORY_OPENABLE);
@@ -393,6 +462,33 @@ public class MainActivity extends BaseActivity {
 
         final String fname = name;
         final long fsize = size;
+
+        final int partMb = prefs.getPartMb();
+        final long partBytes = partMb * 1024L * 1024L;
+        boolean wantVolume = forceVolume;
+        forceVolume = false;
+        if (wantVolume && fsize <= partBytes) {
+            toast("文件未超过单卷大小（" + partMb + " MB），已改为普通上传");
+            wantVolume = false;
+        }
+        if (wantVolume || (fsize > partBytes && partBytes > 0)) {
+            final int count = (int) ((fsize + partBytes - 1) / partBytes);
+            new AlertDialog.Builder(this)
+                    .setTitle("分卷上传")
+                    .setMessage(fname + "\n" + VolumeManifest.human(fsize)
+                            + "\n\n超过单文件上限，将切成 " + count + " 卷（每卷 " + partMb + " MB）"
+                            + "，并上传一个说明文件。\n\n以后在本客户端点开说明文件，"
+                            + "即可自动下载全部分卷并合并还原。")
+                    .setPositiveButton("开始上传", (d, w) -> doUploadVolume(uri, fname, fsize, partMb, count))
+                    .setNegativeButton("取消", null)
+                    .show();
+            return;
+        }
+        doUpload(uri, fname, fsize);
+    }
+
+    /** 普通单文件上传 */
+    private void doUpload(final Uri uri, final String fname, final long fsize) {
         final ProgressDialog pd = new ProgressDialog(this);
         pd.setProgressStyle(ProgressDialog.STYLE_HORIZONTAL);
         pd.setMessage("正在上传 " + fname);
@@ -435,6 +531,140 @@ public class MainActivity extends BaseActivity {
                 }
             }
         }).start();
+    }
+
+    /** 分卷上传：切卷 → 逐卷上传 → 最后上传说明文件 */
+    private void doUploadVolume(final Uri uri, final String fname, final long fsize,
+                                final int partMb, final int count) {
+        uploadCancelled = false;
+        final ProgressDialog pd = new ProgressDialog(this);
+        pd.setProgressStyle(ProgressDialog.STYLE_HORIZONTAL);
+        pd.setTitle("分卷上传");
+        pd.setMessage("准备上传 " + count + " 卷...");
+        pd.setMax(100);
+        pd.setProgress(0);
+        pd.setCancelable(true);
+        pd.setOnCancelListener(d -> {
+            uploadCancelled = true;
+            client.cancelUpload();
+        });
+        pd.show();
+
+        new Thread(() -> {
+            InputStream in = null;
+            long targetFolder = currentFolderId;
+            String folderName = null;
+            Models.ShareInfo folderShare = null;
+            try {
+                // 分卷与说明文件放进单独的子文件夹，分享时只需要一个文件夹链接
+                if (prefs.isVolumeFolder()) {
+                    folderName = volumeFolderName(fname);
+                    try {
+                        targetFolder = client.mkdir(currentFolderId, folderName, "分卷上传");
+                    } catch (Exception e) {
+                        targetFolder = currentFolderId;
+                        folderName = null;
+                    }
+                }
+
+                in = getContentResolver().openInputStream(uri);
+                if (in == null) {
+                    throw new LanzouException(LanzouException.NETWORK_ERROR, "无法读取所选文件");
+                }
+                final VolumeUploader.Result r = VolumeUploader.upload(client, in, fname, fsize,
+                        targetFolder, partMb, new VolumeUploader.Listener() {
+                            @Override
+                            public void onProgress(final int index, final int total,
+                                                   final String partName, final long done, final long totalSize) {
+                                runOnUiThread(() -> {
+                                    pd.setMessage("第 " + index + "/" + total + " 卷 · " + partName
+                                            + "\n" + VolumeManifest.human(done)
+                                            + " / " + VolumeManifest.human(totalSize));
+                                    pd.setProgress((int) (done * 100 / Math.max(1, totalSize)));
+                                });
+                            }
+
+                            @Override
+                            public boolean isCancelled() {
+                                return uploadCancelled;
+                            }
+                        });
+
+                if (folderName != null && targetFolder > 0) {
+                    try {
+                        folderShare = client.share(targetFolder, false);
+                    } catch (Exception ignored) {
+                    }
+                }
+
+                final String fn = folderName;
+                final Models.ShareInfo sh = folderShare;
+                runOnUiThread(() -> {
+                    pd.dismiss();
+                    showVolumeDone(r, fn, sh);
+                });
+            } catch (final Exception e) {
+                runOnUiThread(() -> {
+                    pd.dismiss();
+                    String msg = e.getMessage() == null ? "分卷上传失败" : e.getMessage();
+                    if (uploadCancelled) msg = "已取消上传";
+                    toast(msg);
+                    // 取消/失败时已经传上去的卷仍在云端，刷新一下让用户看到
+                    if (!uploadCancelled) loadDir(currentFolderId);
+                });
+            } finally {
+                if (in != null) {
+                    try {
+                        in.close();
+                    } catch (IOException ignored) {
+                    }
+                }
+            }
+        }).start();
+    }
+
+    /** 分卷文件夹名：原文件基名 + _分卷，过长截断 */
+    private static String volumeFolderName(String fileName) {
+        String base = fileName == null ? "file" : fileName;
+        int dot = base.lastIndexOf('.');
+        if (dot > 0) base = base.substring(0, dot);
+        if (base.length() > 40) base = base.substring(0, 40);
+        return base + "_分卷";
+    }
+
+    private void showVolumeDone(VolumeUploader.Result r, String folderName, Models.ShareInfo share) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("已上传 ").append(r.partCount).append(" 个分卷");
+        if (folderName != null) sb.append("到文件夹「").append(folderName).append("」");
+        sb.append("\n说明文件：").append(r.note.name);
+
+        final String shareText;
+        if (share != null && share.url != null && !share.url.isEmpty()) {
+            StringBuilder st = new StringBuilder(share.url);
+            if (share.pwd != null && !share.pwd.isEmpty()) st.append(" 提取码：").append(share.pwd);
+            shareText = st.toString();
+            sb.append("\n\n文件夹分享：").append(share.url);
+            if (share.pwd != null && !share.pwd.isEmpty()) {
+                sb.append("\n提取码：").append(share.pwd);
+            }
+            sb.append("\n\n对方用本客户端打开这个文件夹，点击说明文件即可自动合并下载。");
+        } else {
+            shareText = null;
+            sb.append("\n\n在网盘里进入该文件夹，点击说明文件即可自动合并下载。");
+        }
+
+        AlertDialog.Builder b = new AlertDialog.Builder(this)
+                .setTitle("分卷上传完成")
+                .setMessage(sb.toString())
+                .setPositiveButton("知道了", null);
+        if (shareText != null) {
+            b.setNeutralButton("复制分享", (d, w) -> {
+                CopyUtil.copy(this, shareText);
+                toast("已复制：" + shareText);
+            });
+        }
+        b.show();
+        loadDir(currentFolderId);
     }
 
     // ================================================================ 链接下载

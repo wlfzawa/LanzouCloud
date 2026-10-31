@@ -38,6 +38,11 @@ public class SettingsActivity extends BaseActivity {
     private CheckBox switchBrowser;
     private CheckBox switchOverwrite;
     private CheckBox switchClipboard;
+    private CheckBox switchChunked;
+    private CheckBox switchVolumeFolder;
+    private CheckBox switchVerify;
+    private Button btnThreads;
+    private Button btnPartSize;
     /** 刷新界面时回填 CheckBox，避免触发监听弹 toast */
     private boolean binding;
 
@@ -55,6 +60,11 @@ public class SettingsActivity extends BaseActivity {
         switchBrowser = findViewById(R.id.switch_browser);
         switchOverwrite = findViewById(R.id.switch_overwrite);
         switchClipboard = findViewById(R.id.switch_clipboard);
+        switchChunked = findViewById(R.id.switch_chunked);
+        switchVerify = findViewById(R.id.switch_verify);
+        switchVolumeFolder = findViewById(R.id.switch_volume_folder);
+        btnThreads = findViewById(R.id.btn_threads);
+        btnPartSize = findViewById(R.id.btn_part_size);
         Button backBtn = findViewById(R.id.settings_back_btn);
         Button switchAccountBtn = findViewById(R.id.btn_switch_account);
         Button manageAccountsBtn = findViewById(R.id.btn_manage_accounts);
@@ -94,6 +104,18 @@ public class SettingsActivity extends BaseActivity {
             }
         });
 
+        switchChunked.setChecked(prefs.isChunkedDownload());
+        switchChunked.setOnCheckedChangeListener((btn, checked) -> {
+            prefs.setChunkedDownload(checked);
+            refreshUi();
+        });
+        switchVolumeFolder.setChecked(prefs.isVolumeFolder());
+        switchVolumeFolder.setOnCheckedChangeListener((btn, checked) -> prefs.setVolumeFolder(checked));
+        switchVerify.setChecked(prefs.isVolumeVerify());
+        switchVerify.setOnCheckedChangeListener((btn, checked) -> prefs.setVolumeVerify(checked));
+        btnThreads.setOnClickListener(v -> chooseThreads());
+        btnPartSize.setOnClickListener(v -> choosePartSize());
+
         TextView textVersion = findViewById(R.id.text_version);
         try {
             String vn = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
@@ -119,9 +141,54 @@ public class SettingsActivity extends BaseActivity {
 
         textDownloadDir.setText("当前目录：" + currentDirText());
         textTheme.setText("主题：" + ThemeHelper.modeName(this));
+        btnThreads.setText("分片线程：" + prefs.getDownloadThreads());
+        btnThreads.setEnabled(prefs.isChunkedDownload());
+        btnPartSize.setText("分卷大小：" + prefs.getPartMb() + " MB");
         binding = true;
         switchClipboard.setChecked(prefs.isClipboardAuto());
+        switchChunked.setChecked(prefs.isChunkedDownload());
+        switchVerify.setChecked(prefs.isVolumeVerify());
+        switchVolumeFolder.setChecked(prefs.isVolumeFolder());
         binding = false;
+    }
+
+    // ================================================================ 大文件
+
+    private void chooseThreads() {
+        final int[] values = {1, 2, 3, 4, 6};
+        final String[] items = {"1（单线程）", "2", "3", "4", "6"};
+        int cur = prefs.getDownloadThreads();
+        int idx = 0;
+        for (int i = 0; i < values.length; i++) {
+            if (values[i] == cur) idx = i;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("分片线程数")
+                .setSingleChoiceItems(items, idx, (d, w) -> {
+                    prefs.setDownloadThreads(values[w]);
+                    d.dismiss();
+                    refreshUi();
+                })
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
+    private void choosePartSize() {
+        final int[] values = {40, 60, 90};
+        int cur = prefs.getPartMb();
+        int idx = 2;
+        for (int i = 0; i < values.length; i++) {
+            if (values[i] == cur) idx = i;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("分卷大小")
+                .setSingleChoiceItems(new String[]{"40 MB", "60 MB", "90 MB"}, idx, (d, w) -> {
+                    prefs.setPartMb(values[w]);
+                    d.dismiss();
+                    refreshUi();
+                })
+                .setNegativeButton("取消", null)
+                .show();
     }
 
     private String currentDirText() {

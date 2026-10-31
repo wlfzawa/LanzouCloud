@@ -16,6 +16,15 @@ public class AppPrefs {
     private static final String KEY_DOWNLOAD_TREE_NAME = "download_tree_name";
     private static final String KEY_DOWNLOAD_BROWSER = "download_browser";
     private static final String KEY_OVERWRITE = "overwrite";
+    /** 大文件是否分片下载（多线程 + 断点续传） */
+    private static final String KEY_CHUNKED = "chunked_download";
+    private static final String KEY_THREADS = "download_threads";
+    /** 分卷上传的单卷大小（MB） */
+    private static final String KEY_PART_MB = "upload_part_mb";
+    /** 分卷上传时是否新建同名子文件夹 */
+    private static final String KEY_VOLUME_FOLDER = "volume_folder";
+    /** 合并分卷后是否校验 SHA-256 */
+    private static final String KEY_VERIFY = "volume_verify";
     private static final String KEY_THEME_MODE = "theme_mode";
     private static final String KEY_CLIPBOARD_AUTO = "clipboard_auto";
     private static final String KEY_CLIPBOARD_ASKED = "clipboard_asked";
@@ -102,6 +111,58 @@ public class AppPrefs {
 
     public void setOverwrite(boolean v) {
         prefs.edit().putBoolean(KEY_OVERWRITE, v).apply();
+    }
+
+    // ================================================================ 大文件
+
+    /** 是否启用分片下载（服务端支持 Range 时才真正生效） */
+    public boolean isChunkedDownload() {
+        return prefs.getBoolean(KEY_CHUNKED, true);
+    }
+
+    public void setChunkedDownload(boolean v) {
+        prefs.edit().putBoolean(KEY_CHUNKED, v).apply();
+    }
+
+    /** 分片线程数，1~6 */
+    public int getDownloadThreads() {
+        int n = prefs.getInt(KEY_THREADS, 4);
+        return n < 1 ? 1 : (n > 6 ? 6 : n);
+    }
+
+    public void setDownloadThreads(int n) {
+        prefs.edit().putInt(KEY_THREADS, n < 1 ? 1 : (n > 6 ? 6 : n)).apply();
+    }
+
+    /**
+     * 分卷大小（MB）。免费账号单文件上限 100 MB，
+     * 留出余量取 90 MB，允许在 10~95 之间调整。
+     */
+    public int getPartMb() {
+        int n = prefs.getInt(KEY_PART_MB, 90);
+        return n < 10 ? 10 : (n > 95 ? 95 : n);
+    }
+
+    public void setPartMb(int mb) {
+        prefs.edit().putInt(KEY_PART_MB, mb < 10 ? 10 : (mb > 95 ? 95 : mb)).apply();
+    }
+
+    /** 分卷上传时自动新建一个子文件夹放分卷和说明文件 */
+    public boolean isVolumeFolder() {
+        return prefs.getBoolean(KEY_VOLUME_FOLDER, true);
+    }
+
+    public void setVolumeFolder(boolean v) {
+        prefs.edit().putBoolean(KEY_VOLUME_FOLDER, v).apply();
+    }
+
+    /** 合并分卷后是否比对 SHA-256 */
+    public boolean isVolumeVerify() {
+        return prefs.getBoolean(KEY_VERIFY, true);
+    }
+
+    public void setVolumeVerify(boolean v) {
+        prefs.edit().putBoolean(KEY_VERIFY, v).apply();
     }
 
     // ================================================================ 外观

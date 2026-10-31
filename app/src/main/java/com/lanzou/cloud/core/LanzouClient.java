@@ -10,6 +10,7 @@ import com.google.gson.JsonParser;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.File;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URLDecoder;
@@ -30,6 +31,7 @@ import javax.net.ssl.TrustManagerFactory;
 import javax.net.ssl.X509TrustManager;
 
 import okhttp3.FormBody;
+import okhttp3.Call;
 import okhttp3.HttpUrl;
 import okhttp3.MediaType;
 import okhttp3.MultipartBody;
@@ -71,6 +73,15 @@ public class LanzouClient {
     private final long timeout;
 
     private String uid;
+
+    /** 正在进行的上传请求，供界面取消 */
+    private volatile Call currentUpload;
+
+    /** 取消当前上传（已传出的数据无法回滚，服务端不会留下文件） */
+    public void cancelUpload() {
+        Call c = currentUpload;
+        if (c != null) c.cancel();
+    }
 
     public LanzouClient() {
         this(30);
@@ -574,7 +585,8 @@ public class LanzouClient {
 
         Response resp = null;
         try {
-            resp = uploadHttp.newCall(req).execute();
+            currentUpload = uploadHttp.newCall(req);
+            resp = currentUpload.execute();
             String bodyStr = resp.body() == null ? "" : resp.body().string();
             if (bodyStr.trim().isEmpty()) {
                 throw new LanzouException(LanzouException.FAILED, "上传接口返回空响应");
@@ -595,14 +607,172 @@ public class LanzouClient {
             String shareUrl = fId.isEmpty() ? "" : getStr(item, "is_newd") + "/" + fId;
             return new Models.UploadResult(id, name, sz, shareUrl);
         } catch (IOException e) {
-            throw new LanzouException(LanzouException.NETWORK_ERROR, "上传失败: " + e.getMessage());
+            String msg = e.getMessage() == null ? "" : e.getMessage();
+            if (msg.contains("Canceled") || msg.contains("canceled")) {
+                throw new LanzouException(LanzouException.FAILED, "上传已取消");
+            }
+            throw new LanzouException(LanzouException.NETWORK_ERROR, "上传失败: " + msg);
         } catch (LanzouException e) {
             throw e;
         } catch (Exception e) {
             throw new LanzouException(LanzouException.FAILED, "上传解析失败: " + e.getMessage());
         } finally {
+            currentUpload = null;
             if (resp != null) resp.close();
         }
+    }
+
+    // ================================================================ 分片下载
+
+    /** 远端文件信息：最终地址、总大小、是否支持 Range */
+    public static class RemoteFile {
+        public String name = "";
+        public String url = "";
+        public String etag;
+        public long total;
+        public boolean ranged;
+    }
+
+    /**
+     * 探测直链：只取首字节，确认文件大小、是否支持 Range，并拿到最终的 CDN 地址。
+     * 挑战页、验证页、跳转都在这里处理，不会把 HTML 当成文件内容。
+     */
+    public RemoteFile probe(String durl, String referer, String pwd) throws LanzouException {
+        String currentUrl = durl;
+        String lastPage = null;
+        int verifyRounds = 0;
+        int refreshRounds = 0;
+        int resetRounds = 0;
+        int redirectRounds = 0;
+
+        for (int attempt = 0; attempt < 8; attempt++) {
+            Request req = new Request.Builder().url(currentUrl).get()
+                    .header("User-Agent", UA)
+                    .header("Referer", referer == null ? "" : referer)
+                    .header("Range", "bytes=0-0")
+                    .header("Accept", "*/*")
+                    .build();
+            Response resp = null;
+            try {
+                resp = downloadHttp.newCall(req).execute();
+                if (resp.body() == null) {
+                    throw new LanzouException(LanzouException.NETWORK_ERROR, "读取文件信息失败：空响应");
+                }
+                HttpUrl finalUrl = resp.request().url();
+                InputStream stream = resp.body().byteStream();
+                byte[] head = new byte[4096];
+                int n = readHead(stream, head);
+                String headStr = n > 0 ? new String(head, 0, n, "UTF-8") : "";
+                boolean html = AcwSc.looksHtml(head, n) || isHtmlType(resp.header("Content-Type"));
+
+                if (!html) {
+                    RemoteFile f = new RemoteFile();
+                    f.url = finalUrl.toString();
+                    f.ranged = resp.code() == 206;
+                    f.total = parseRangeTotal(resp.header("Content-Range"));
+                    if (f.total <= 0) f.total = resp.body().contentLength();
+                    f.etag = resp.header("ETag");
+                    String real = parseContentDisposition(resp.header("Content-Disposition"));
+                    if (real != null && isUsableFileName(real)) f.name = real;
+                    return f;
+                }
+
+                String page = headStr + readAll(stream, PAGE_LIMIT);
+                lastPage = page;
+
+                if (AcwSc.isChallenge(page)) {
+                    String val = AcwSc.calc(page);
+                    if (val.isEmpty()) {
+                        throw new LanzouException(LanzouException.NETWORK_ERROR,
+                                "读取文件信息失败：无法解析 acw_sc 挑战脚本", page, resp.code());
+                    }
+                    cookieJar.addHostCookie(finalUrl.host(), "acw_sc__v2", val);
+                    currentUrl = finalUrl.toString();
+                    continue;
+                }
+                if (!resp.isSuccessful()) throw htmlPageError(page, resp.code());
+                if (verifyRounds < 2 && AcwSc.isVerifyPage(page)) {
+                    verifyRounds++;
+                    String real = resolveVerifyPage(finalUrl, page);
+                    if (real != null) {
+                        currentUrl = real;
+                        continue;
+                    }
+                }
+                if (redirectRounds < 3) {
+                    String redirect = AcwSc.findRedirect(page);
+                    if (redirect != null && !redirect.isEmpty()) {
+                        HttpUrl next = finalUrl.resolve(redirect);
+                        if (next != null) {
+                            redirectRounds++;
+                            currentUrl = next.toString();
+                            continue;
+                        }
+                    }
+                }
+                if (refreshRounds < 1 && referer != null && !referer.isEmpty()
+                        && (page.contains("isngis") || page.contains("ajaxfile.php?file="))) {
+                    refreshRounds++;
+                    try {
+                        Models.DownloadInfo fresh = directUrl(referer, pwd);
+                        if (fresh != null && fresh.durl != null && !fresh.durl.isEmpty()) {
+                            currentUrl = fresh.durl;
+                            continue;
+                        }
+                    } catch (LanzouException ignored) {
+                    }
+                }
+                if (resetRounds < 1) {
+                    resetRounds++;
+                    cookieJar.clearProtection(finalUrl.host());
+                    currentUrl = durl;
+                    continue;
+                }
+                throw htmlPageError(page, resp.code());
+            } catch (IOException e) {
+                throw new LanzouException(LanzouException.NETWORK_ERROR,
+                        "读取文件信息失败: " + e.getMessage());
+            } finally {
+                if (resp != null) resp.close();
+            }
+        }
+        throw new LanzouException(LanzouException.NETWORK_ERROR,
+                lastPage == null ? "读取文件信息失败：重试次数过多"
+                        : "读取文件信息失败：" + describePage(lastPage));
+    }
+
+    /** Range 响应头里的总大小：bytes 0-0/2919068 */
+    private static long parseRangeTotal(String cr) {
+        if (cr == null) return 0;
+        int slash = cr.lastIndexOf('/');
+        if (slash < 0) return 0;
+        try {
+            return Long.parseLong(cr.substring(slash + 1).trim());
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    /**
+     * 下载到文件：能分片就分片（多线程 + 断点续传），否则回退单流。
+     *
+     * @param threads 分片线程数，1 表示不分片
+     */
+    public void downloadToFile(String durl, String referer, String pwd, File target,
+                               int threads, ProgressListener listener) throws LanzouException {
+        ChunkedDownloader.download(this, durl, referer, pwd, target, threads, null, listener);
+    }
+
+    /** 已经 probe 过的场景（文件名、大小、Range 支持都已确定），省一次请求 */
+    public void downloadToFile(String durl, String referer, String pwd, File target,
+                               int threads, RemoteFile known,
+                               ProgressListener listener) throws LanzouException {
+        ChunkedDownloader.download(this, durl, referer, pwd, target, threads, known, listener);
+    }
+
+    /** 供分片下载复用连接池与 Cookie */
+    OkHttpClient downloadClient() {
+        return downloadHttp;
     }
 
     // ================================================================ 下载

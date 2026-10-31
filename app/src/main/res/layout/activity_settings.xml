@@ -210,6 +210,68 @@
                 android:layout_marginBottom="16dp"
                 android:background="@color/divider" />
 
+            <!-- 大文件 -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="大文件"
+                android:textSize="14sp"
+                android:textColor="@color/primary"
+                android:textStyle="bold" />
+
+            <CheckBox
+                android:id="@+id/switch_chunked"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="分片下载（多线程、断点续传）"
+                android:textSize="16sp" />
+
+            <Button
+                android:id="@+id/btn_threads"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="分片线程：4" />
+
+            <Button
+                android:id="@+id/btn_part_size"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="分卷大小：90 MB" />
+
+            <CheckBox
+                android:id="@+id/switch_volume_folder"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="分卷上传时新建子文件夹"
+                android:textSize="16sp" />
+
+            <CheckBox
+                android:id="@+id/switch_verify"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="合并分卷后校验 SHA-256"
+                android:textSize="16sp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="上传超过单卷大小的文件会自动切卷，并在同一文件夹生成 .lanzouvol.txt 说明文件；点开说明文件即可自动合并下载。"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginTop="16dp"
+                android:layout_marginBottom="16dp"
+                android:background="@color/divider" />
+
             <!-- 跳转浏览器 -->
             <TextView
                 android:layout_width="wrap_content"

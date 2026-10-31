@@ -16,6 +16,7 @@ import com.lanzou.cloud.R;
 import com.lanzou.cloud.core.LanzouClient;
 import com.lanzou.cloud.core.LanzouException;
 import com.lanzou.cloud.core.Models;
+import com.lanzou.cloud.core.VolumeManifest;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -211,6 +212,18 @@ public class ShareBrowseActivity extends BaseActivity {
         final String shareUrl = ref.baseUrl + "/" + f.code;
         String meta = (f.size == null ? "" : f.size)
                 + (f.time == null || f.time.isEmpty() ? "" : "  " + f.time);
+        if (VolumeManifest.isManifest(f.name)) {
+            new AlertDialog.Builder(this)
+                    .setTitle(f.name)
+                    .setMessage(meta + "\n\n这是分卷说明文件。\n\n"
+                            + "「合并下载」会下载文件夹里的全部分卷，按顺序拼接成一个文件并校验。")
+                    .setPositiveButton("合并下载", (d, w) -> openVolume(f))
+                    .setNeutralButton("普通下载", (d, w) -> DownloadHelper.startFromShare(
+                            this, client, prefs, shareUrl, ref.pwd, f.name))
+                    .setNegativeButton("取消", null)
+                    .show();
+            return;
+        }
         new AlertDialog.Builder(this)
                 .setTitle(f.name == null || f.name.isEmpty() ? f.code : f.name)
                 .setMessage(meta)
@@ -222,6 +235,84 @@ public class ShareBrowseActivity extends BaseActivity {
                 })
                 .setNegativeButton("取消", null)
                 .show();
+    }
+
+    // ================================================================ 分卷
+
+    /** 读清单 → 补齐所有分页 → 核对分卷齐全 → 加入下载队列 */
+    private void openVolume(final Models.ShareFile f) {
+        if (ref == null) return;
+        if (batchRunning) {
+            toast("正在处理其它任务，请稍候");
+            return;
+        }
+        final String shareUrl = ref.baseUrl + "/" + f.code;
+        batchRunning = true;
+        batchCancel = false;
+        allBtn.setEnabled(false);
+
+        final ProgressDialog pd = new ProgressDialog(this);
+        pd.setTitle("分卷下载");
+        pd.setMessage("正在读取说明文件...");
+        pd.setProgressStyle(ProgressDialog.STYLE_HORIZONTAL);
+        pd.setMax(1);
+        pd.setCancelable(true);
+        pd.setOnCancelListener(d -> batchCancel = true);
+        pd.show();
+
+        new Thread(() -> {
+            try {
+                final VolumeManifest m = VolumeFlow.read(client, shareUrl, ref.pwd);
+                runOnUiThread(() -> {
+                    if (batchCancel) {
+                        pd.dismiss();
+                        batchRunning = false;
+                        allBtn.setEnabled(!items.isEmpty());
+                        return;
+                    }
+                    pd.setMessage("正在核对分卷...");
+                    final List<Models.ShareFile> seed = new ArrayList<>(items);
+                    final int startPage = page + 1;
+                    final boolean more = hasMore;
+                    new Thread(() -> collectAll(seed, startPage, more, pd,
+                            (all, err) -> afterVolumeCollect(m, all, err))).start();
+                });
+            } catch (final Exception e) {
+                runOnUiThread(() -> {
+                    pd.dismiss();
+                    batchRunning = false;
+                    allBtn.setEnabled(!items.isEmpty());
+                    toast(e.getMessage());
+                });
+            }
+        }).start();
+    }
+
+    private void afterVolumeCollect(VolumeManifest m, List<Models.ShareFile> all, String err) {
+        List<String> miss = VolumeFlow.missing(m, VolumeFlow.namesOfShare(all));
+        if (!miss.isEmpty()) {
+            new AlertDialog.Builder(this)
+                    .setTitle("分卷不完整")
+                    .setMessage("说明文件要求 " + m.parts.size() + " 卷，当前文件夹里缺少 "
+                            + miss.size() + " 个：\n" + preview(miss)
+                            + "\n\n可以让分享者确认是否传完整。")
+                    .setPositiveButton("知道了", null)
+                    .show();
+            return;
+        }
+        String note = err == null || err.isEmpty() ? null
+                : "读取列表时有分页失败（" + err + "），但清单所需的分卷已齐全。";
+        VolumeFlow.start(this, prefs, m, VolumeFlow.fromShare(client, ref, all), note);
+    }
+
+    private static String preview(List<String> list) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < list.size() && i < 5; i++) {
+            if (i > 0) sb.append('\n');
+            sb.append("· ").append(list.get(i));
+        }
+        if (list.size() > 5) sb.append("\n… 共 ").append(list.size()).append(" 个");
+        return sb.toString();
     }
 
     private void toast(String msg) {
@@ -262,12 +353,18 @@ public class ShareBrowseActivity extends BaseActivity {
 
         final int startPage = page + 1;
         final boolean more = hasMore;
-        new Thread(() -> collectAll(seed, startPage, more, pd)).start();
+        new Thread(() -> collectAll(seed, startPage, more, pd,
+                (all, err) -> confirmBatch(all, err))).start();
+    }
+
+    /** 补齐分页后的回调（自定义接口，避免依赖 API 24+ 的 java.util.function） */
+    private interface CollectCallback {
+        void onDone(List<Models.ShareFile> all, String error);
     }
 
     /** 后台补齐剩余分页，按 code 去重后回到主线程确认 */
     private void collectAll(final List<Models.ShareFile> seed, int startPage,
-                            boolean more, final ProgressDialog pd) {
+                            boolean more, final ProgressDialog pd, final CollectCallback done) {
         final List<Models.ShareFile> all = new ArrayList<>();
         final Set<String> codes = new HashSet<>();
         for (Models.ShareFile f : seed) {
@@ -322,7 +419,7 @@ public class ShareBrowseActivity extends BaseActivity {
                 toast(err == null || err.isEmpty() ? "没有可下载的文件" : err);
                 return;
             }
-            confirmBatch(all, err);
+            done.onDone(all, err);
         });
     }
 
