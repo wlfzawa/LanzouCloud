@@ -64,6 +64,7 @@ public final class VolumeFlow {
             @Override
             public VolumeDownloader.PartUrl resolve(String partName) throws LanzouException {
                 Models.FileItem f = byName.get(partName);
+                if (f == null) f = findFile(files, partName);
                 if (f == null) return null;
                 Models.ShareInfo s = client.share(f.id, true);
                 if (s == null || s.url == null || s.url.isEmpty()) return null;
@@ -85,6 +86,7 @@ public final class VolumeFlow {
             @Override
             public VolumeDownloader.PartUrl resolve(String partName) throws LanzouException {
                 Models.ShareFile f = byName.get(partName);
+                if (f == null) f = findShare(files, partName);
                 if (f == null) return null;
                 String url = ref.baseUrl + "/" + f.code;
                 Models.DownloadInfo info = client.directUrl(url, ref.pwd);
@@ -99,9 +101,51 @@ public final class VolumeFlow {
         if (m == null || m.parts == null) return out;
         for (VolumeManifest.Part p : m.parts) {
             if (p.name == null) continue;
-            if (have == null || !have.contains(p.name)) out.add(p.name);
+            boolean found = false;
+            if (have != null) {
+                for (String h : have) {
+                    if (samePart(h, p.name)) {
+                        found = true;
+                        break;
+                    }
+                }
+            }
+            if (!found) out.add(p.name);
         }
         return out;
+    }
+
+    /**
+     * 文件名是否指向同一卷。
+     * 分享页对超长文件名可能截断，精确匹配失败时用 {@code _partNNN} 尾段比对。
+     */
+    static boolean samePart(String a, String b) {
+        if (a == null || b == null) return false;
+        if (a.equals(b)) return true;
+        return tail(a).equals(tail(b));
+    }
+
+    private static String tail(String name) {
+        int i = name.lastIndexOf("_part");
+        if (i < 0) return name;
+        int dot = name.lastIndexOf('.');
+        return dot > i ? name.substring(i, dot) : name.substring(i);
+    }
+
+    private static Models.FileItem findFile(List<Models.FileItem> files, String partName) {
+        if (files == null) return null;
+        for (Models.FileItem f : files) {
+            if (samePart(f.name, partName)) return f;
+        }
+        return null;
+    }
+
+    private static Models.ShareFile findShare(List<Models.ShareFile> files, String partName) {
+        if (files == null) return null;
+        for (Models.ShareFile f : files) {
+            if (samePart(f.name, partName)) return f;
+        }
+        return null;
     }
 
     public static List<String> namesOfFiles(List<Models.FileItem> files) {
